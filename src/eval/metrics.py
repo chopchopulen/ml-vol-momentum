@@ -11,7 +11,7 @@ def sharpe(r: pd.Series, ann: int = 252) -> float:
 def sortino(r: pd.Series, ann: int = 252) -> float:
     downside = r[r < 0]
     if len(downside) == 0 or downside.std() == 0:
-        return 0.0
+        return np.inf if r.mean() > 0 else 0.0
     return float(r.mean() / downside.std() * np.sqrt(ann))
 
 def max_drawdown(equity: pd.Series) -> float:
@@ -39,7 +39,7 @@ def information_coefficient(signal: pd.DataFrame, returns: pd.DataFrame) -> pd.S
                 continue
             rho, _ = spearmanr(sig[common], ret[common])
             ic_vals[dt] = rho
-        except Exception:
+        except KeyError:
             continue
     return pd.Series(ic_vals, name="IC")
 

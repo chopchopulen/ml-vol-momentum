@@ -16,5 +16,6 @@ def leakage_test_signal(returns_panel: pd.DataFrame) -> pd.DataFrame:
     # this signal should produce Sharpe >> 15. If it doesn't, the eval is broken.
     r = returns_panel["return"].unstack("ticker")
     sig = r.shift(-1).stack()  # t+1 return, presented at t
+    sig = sig.dropna()  # pandas-version-safe: explicitly drop NaN rows
     sig.name = "signal"
     return sig.to_frame()

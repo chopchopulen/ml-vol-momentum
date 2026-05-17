@@ -28,13 +28,9 @@ def generate_windows(
     windows = []
     for year in range(first_test_year, end.year + 1):
         train_end = pd.Timestamp(f"{year - 1}-12-31")
+        if train_end < start:
+            continue
         test_start = train_end + pd.Timedelta(days=embargo_days + 1)
-        # Ensure test_start is in the correct year after the embargo
-        if test_start.year < year:
-            test_start = pd.Timestamp(f"{year}-01-01") + pd.Timedelta(days=1)
-            # Recheck embargo
-            if (test_start - train_end).days < embargo_days:
-                test_start = train_end + pd.Timedelta(days=embargo_days + 1)
         test_end = pd.Timestamp(f"{year}-12-31")
         if test_end > end:
             test_end = end
