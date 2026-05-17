@@ -1,5 +1,4 @@
 from __future__ import annotations
-import re
 from pathlib import Path
 import pandas as pd
 import requests
@@ -57,41 +56,91 @@ def _parse_changes(soup: BeautifulSoup) -> pd.DataFrame:
 
 def _merge_current_and_changes(current: pd.DataFrame,
                                 changes: pd.DataFrame) -> pd.DataFrame:
-    removed = changes[changes["removed_date"].notna()][["ticker", "removed_date"]]
-    added   = changes[changes["added_date"].notna()][["ticker", "added_date",
-                                                       "gics_sector", "gics_sub_industry"]]
+    """
+    Build a membership table where each row represents ONE membership period.
+    Tickers that were removed and re-added get multiple rows.
+    """
+    # Sector lookup from current constituents (authoritative for active members)
+    sector_map = (current.set_index("ticker")[["gics_sector", "gics_sub_industry"]]
+                  .to_dict("index"))
 
-    # Tickers only in removed list (never re-added, no longer current) need to be included
-    # so we can correctly exclude them in historical point-in-time queries.
-    removed_only_tickers = set(removed["ticker"].dropna()) - set(current["ticker"]) - set(added["ticker"].dropna())
-    removed_only_rows = []
-    for ticker in removed_only_tickers:
-        removed_only_rows.append({"ticker": ticker, "gics_sector": "",
-                                   "gics_sub_industry": "",
-                                   "added_date": pd.NaT, "removed_date": pd.NaT})
-    removed_only_df = pd.DataFrame(removed_only_rows) if removed_only_rows else pd.DataFrame(
-        columns=["ticker", "gics_sector", "gics_sub_industry", "added_date", "removed_date"])
+    # Collect all addition and removal events from the changes table
+    additions = (changes[changes["added_date"].notna()]
+                 [["ticker", "added_date"]]
+                 .dropna(subset=["ticker"])
+                 .copy())
+    removals  = (changes[changes["removed_date"].notna()]
+                 [["ticker", "removed_date"]]
+                 .dropna(subset=["ticker"])
+                 .copy())
 
-    all_tickers = pd.concat([
-        current,
-        added[~added["ticker"].isin(current["ticker"])],
-        removed_only_df,
-    ], ignore_index=True)
+    # Sort events chronologically
+    additions = additions.sort_values("added_date").reset_index(drop=True)
+    removals  = removals.sort_values("removed_date").reset_index(drop=True)
 
-    removal_map = removed.dropna(subset=["ticker"]).set_index("ticker")["removed_date"].to_dict()
-    all_tickers["removed_date"] = all_tickers["ticker"].map(removal_map)
+    rows = []
 
-    add_map = (added.dropna(subset=["ticker"])
-               .sort_values("added_date")
-               .drop_duplicates("ticker", keep="first")
-               .set_index("ticker")["added_date"].to_dict())
-    mask_no_date = all_tickers["added_date"].isna()
-    all_tickers.loc[mask_no_date, "added_date"] = (
-        all_tickers.loc[mask_no_date, "ticker"].map(add_map)
-    )
+    # Current constituents: they are active NOW (removed_date = NaT)
+    for _, row in current.iterrows():
+        tkr = row["ticker"]
+        # Find the most recent addition event for this ticker (if any)
+        tkr_adds = additions[additions["ticker"] == tkr].sort_values("added_date")
+        if tkr_adds.empty:
+            # No recorded addition — member since before our history
+            added = pd.NaT
+        else:
+            added = tkr_adds.iloc[-1]["added_date"]
+        rows.append({
+            "ticker": tkr,
+            "added_date": added,
+            "removed_date": pd.NaT,
+            "gics_sector": row["gics_sector"],
+            "gics_sub_industry": row["gics_sub_industry"],
+        })
 
-    return all_tickers.drop_duplicates(subset=["ticker", "added_date",
-                                                "removed_date"]).reset_index(drop=True)
+    current_tickers = set(current["ticker"].tolist())
+
+    # Historical (removed) tickers: match each removal with the preceding addition
+    # For each ticker in the removals table that is NOT currently active,
+    # pair up: (add_1 → remove_1), (add_2 → remove_2), ...
+    # If there are more removals than additions, the first removal's add_date = NaT
+    historical_tickers = set(removals["ticker"].tolist()) - current_tickers
+    for tkr in sorted(historical_tickers):
+        tkr_adds = sorted(additions[additions["ticker"] == tkr]["added_date"].tolist())
+        tkr_rems = sorted(removals[removals["ticker"] == tkr]["removed_date"].tolist())
+        # Pair up periods: excess removals get NaT as add_date (member from beginning).
+        # Align from the end so that later events pair correctly:
+        # e.g. 1 addition, 2 removals -> (NaT, rem[0]), (add[0], rem[1])
+        num_periods = max(len(tkr_adds), len(tkr_rems))
+        add_pad = [pd.NaT] * (num_periods - len(tkr_adds)) + tkr_adds
+        rem_pad = [pd.NaT] * (num_periods - len(tkr_rems)) + tkr_rems
+        for i in range(num_periods):
+            added   = add_pad[i]
+            removed = rem_pad[i]
+            # Back-fill sector from current map if available, else empty
+            sec_info = sector_map.get(tkr, {})
+            rows.append({
+                "ticker": tkr,
+                "added_date": added,
+                "removed_date": removed,
+                "gics_sector": sec_info.get("gics_sector", ""),
+                "gics_sub_industry": sec_info.get("gics_sub_industry", ""),
+            })
+
+    df = pd.DataFrame(rows)
+
+    # Validate: no row should have added_date > removed_date
+    inverted = df[(df["added_date"].notna()) &
+                  (df["removed_date"].notna()) &
+                  (df["added_date"] > df["removed_date"])]
+    if not inverted.empty:
+        import warnings
+        warnings.warn(
+            f"Universe table has {len(inverted)} rows with inverted dates "
+            f"(added > removed). Tickers: {inverted['ticker'].tolist()[:10]}"
+        )
+
+    return df.reset_index(drop=True)
 
 def build_membership_table(out_path: Path) -> pd.DataFrame:
     out_path = Path(out_path)
