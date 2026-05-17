@@ -91,7 +91,8 @@ class HARRV:
                     [df_out.index, [tkr]], names=["date", "ticker"])
                 df_out = df_out.swaplevel().sort_index()
                 rows.append(df_out)
-            except Exception:
+            except (np.linalg.LinAlgError, ValueError, KeyError) as e:
+                warnings.warn(f"Skipping {tkr}: {e}")
                 continue
         if not rows:
             return pd.DataFrame()
@@ -109,7 +110,8 @@ def _fit_one_garch(tkr: str, r: pd.Series, dist: str,
             res = am.fit(disp="off", show_warning=False)
         converged = res.convergence_flag == 0
         return tkr, res, converged
-    except Exception:
+    except Exception as e:
+        warnings.warn(f"GARCH fit failed for {tkr}: {e}", stacklevel=2)
         return tkr, None, False
 
 
@@ -142,9 +144,9 @@ class GARCH11Model:
         rows = []
         for tkr, res in self.fitted_.items():
             try:
-                r = history.xs(tkr, level="ticker")["return"]
-                data = r * 100 if self.rescale else r
-                # Re-forecast from the last fit (fixed params, rolling update)
+                # No new data is passed: arch's forecast() uses the last
+                # in-sample conditional variance from the fitted model, which
+                # is the correct 1-step-ahead prediction in a walk-forward setup.
                 fcast = res.forecast(horizon=21, reindex=False)
                 # fcast.variance has shape (n_obs, 21); sum across horizon
                 cond_var_sum = fcast.variance.sum(axis=1)
@@ -156,7 +158,8 @@ class GARCH11Model:
                     [df_out.index, [tkr]], names=["date", "ticker"])
                 df_out = df_out.swaplevel().sort_index()
                 rows.append(df_out)
-            except Exception:
+            except (np.linalg.LinAlgError, ValueError, KeyError) as e:
+                warnings.warn(f"Skipping {tkr}: {e}")
                 continue
         if not rows:
             return pd.DataFrame()
