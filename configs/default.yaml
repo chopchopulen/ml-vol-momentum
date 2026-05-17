@@ -1,0 +1,94 @@
+project:
+  name: ml-vol-momentum
+  seed: 42
+
+data:
+  start_date: "2000-01-01"
+  end_date:   "2024-12-31"
+  primary_source: yfinance
+  fallback_source: stooq
+  vix_ticker: "^VIX"
+  cache_dir: data/cache/
+  membership_table: data/processed/sp500_membership.parquet
+
+features:
+  rv_windows: [1, 5, 21]
+  parkinson_window: 5
+  skew_kurt_window: 63
+  feature_shift: 1
+  target_horizon: 21
+
+cv:
+  scheme: expanding_annual
+  embargo_days: 42
+  train_start: "2000-01-01"
+  first_test_year: 2003
+  last_test_year: 2024
+
+models:
+  rolling_vol:
+    window: 126
+  garch:
+    p: 1
+    q: 1
+    dist: "t"
+    rescale: true
+    n_jobs: 8
+    refit_frequency_years: 1
+  har_rv:
+    target: "log_rv"
+    components: ["rv_d", "rv_w", "rv_m"]
+    fit_method: "ols"
+  gbm:
+    target: "log_rv"
+    learning_rate: 0.05
+    num_leaves: 31
+    max_depth: 6
+    min_data_in_leaf: 200
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    n_estimators: 1500
+    early_stopping_rounds: 100
+    categorical_features: ["sector"]
+  lstm:
+    target: "log_rv"
+    sequence_length: 60
+    hidden_size: 48
+    num_layers: 1
+    dropout: 0.25
+    loss: "huber"
+    huber_delta: 1.0
+    optimizer: "adam"
+    learning_rate: 1.0e-3
+    batch_size: 1024
+    max_epochs: 50
+    patience: 5
+    val_fraction: 0.1
+    seeds: [0, 1, 2, 3, 4]
+
+strategy:
+  momentum:
+    lookback: 252
+    skip: 21
+  portfolios:
+    long_short_quintile: true
+    long_only_quintile: true
+    vol_targeted_gross: true
+  vol_target_annualized: 0.10
+  rebalance: "month_end"
+
+costs:
+  round_trip_bps: 10.0
+
+eval:
+  forecast_loss: "qlike"
+  dm_lag: 20
+  ic_method: "spearman"
+  ann_factor: 252
+
+interp:
+  shap_background_size: 5000
+  regime:
+    method: "vix_percentile"
+    thresholds: [0.33, 0.67]
+    fit_on: "train_window"
