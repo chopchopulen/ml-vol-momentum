@@ -46,7 +46,8 @@ class HARRV:
         log_rv_w = np.log(sub["rv_w"].clip(lower=1e-12))
         log_rv_m = np.log(sub["rv_m"].clip(lower=1e-12))
         X = sm.add_constant(
-            np.column_stack([log_rv_d, log_rv_w, log_rv_m]))
+            np.column_stack([log_rv_d, log_rv_w, log_rv_m]),
+            has_constant="add")  # force intercept even if a column is constant
         y = sub["target_log_rv"].values
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
