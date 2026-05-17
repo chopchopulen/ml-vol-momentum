@@ -29,11 +29,9 @@ def _fetch_yfinance(tickers: list[str], start: pd.Timestamp,
         # Determine level positions: Price level and Ticker level
         level_names = list(raw.columns.names)
         if "Price" in level_names and "Ticker" in level_names:
-            price_level = level_names.index("Price")
             ticker_level = level_names.index("Ticker")
         else:
             # Fallback: assume level 0 = field, level 1 = ticker
-            price_level = 0
             ticker_level = 1
 
         frames = []
@@ -123,13 +121,11 @@ def load_ohlcv(tickers: list[str], start: pd.Timestamp, end: pd.Timestamp,
 
 
 def load_vix(start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
-    cfg = load_config()
-    vix_ticker = cfg["data"]["vix_ticker"]
+    vix_ticker = _cfg["data"]["vix_ticker"]
     cp = _cache_path("VIX", start, end, "yfinance")
     if cp.exists():
         return pd.read_parquet(cp)["vix"]
 
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     raw = yf.download(vix_ticker, start=start, end=end,
                       auto_adjust=True, progress=False)
     if raw.empty:
@@ -151,6 +147,7 @@ def load_vix(start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
     s = close.rename("vix")
     s.index.name = "date"
     s.index = pd.to_datetime(s.index)
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     s.to_frame().to_parquet(cp)
     return s
 
