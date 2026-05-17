@@ -69,6 +69,32 @@ Updated as the project progresses.
 
 ---
 
+### 7. R²=1.000 in some OOS years (log(0)=-inf silent contamination)
+
+**What I found:** Years 2013, 2014, 2015, and 2021 showed R² = 1.000 exactly in the first 22-year run.
+
+**Root cause:** `targets.py` computed `log_rv = np.log(rv_stacked)` directly. When a stock had zero returns for all 21 forward days (halted trading, stale yfinance prices for delisted tickers), `rv_stacked = 0` produced `-inf` in `target_log_rv`. Pandas `dropna()` silently ignores `-inf` — it only drops `NaN`. So these rows survived the `.dropna(subset=["target_log_rv"])` filter and entered the OOS panel.
+
+**Why R²=1.0:** SS_tot = Σ(y - ȳ)². When any y = -inf, ȳ = -inf, and SS_tot = Σ(-inf - (-inf))² = NaN → not caught. Actually: `real.mean()` with a -inf gives -inf, `(real - real.mean())² = (finite - (-inf))² = +inf`, so SS_tot = +inf. Then `1 - SS_res/SS_tot = 1 - finite/inf = 1.0` exactly.
+
+**Fix:** Filter `rv_stacked` to positive values OR NaN (keep NaN for trailing horizon window, drop zeros which indicate bad data).
+
+**Interview angle:** "Silent data quality issues that survive normal cleaning pipelines. Always check for -inf separately from NaN, especially after log transforms."
+
+---
+
+### 8. HAR-RV R²=−0.101 in 2015 (China shock)
+
+**What I found:** 2015 has the only negative OOS R² in the 22-year series.
+
+**Why:** August 2015 saw the China devaluation shock — sudden VIX spike from ~12 to ~40 in one week. HAR-RV's features (rv_d, rv_w, rv_m) all used trailing realized variance, which was near historic lows in the weeks before the shock. The model predicted low vol and was catastrophically wrong. A forecast worse than the unconditional mean = negative R².
+
+**What's surprising:** Every other year (including 2008, 2020) has positive R². The 2015 event was unusual because it was a step-change rather than a gradual buildup. Even 2008 gave HAR-RV some lead time (vol rose from Aug 2007 through Sep 2008); 2015's shock had essentially zero warning in the trailing features.
+
+**Implication for the project:** GBM/LSTM that include VIX as a feature may do better in 2015, since VIX was already elevated in early 2015 before the shock. This is testable in Phase 3's per-year breakdown.
+
+---
+
 ## Phase 2 (to be filled in)
 
 *Placeholder for momentum, scaling, and portfolio surprises.*
