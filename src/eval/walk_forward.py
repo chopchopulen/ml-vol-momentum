@@ -44,3 +44,34 @@ def generate_windows(
             embargo_days=embargo_days,
         ))
     return windows
+
+
+def run_walk_forward(
+    forecaster,
+    panel: pd.DataFrame,
+    windows: list[CVWindow],
+) -> pd.DataFrame:
+    oos_frames = []
+    for w in windows:
+        train_mask = (
+            (panel.index.get_level_values("date") >= w.train_start) &
+            (panel.index.get_level_values("date") <= w.train_end)
+        )
+        train = panel[train_mask]
+        # Provide full history up to end of test window so rolling forecasters
+        # can use lagged data in the test window.
+        history_mask = (
+            panel.index.get_level_values("date") <= w.test_end
+        )
+        history = panel[history_mask]
+        forecaster.fit(train)
+        preds = forecaster.predict(history)
+        if preds.empty:
+            continue
+        # Restrict to test window dates only
+        pred_dates = preds.index.get_level_values("date")
+        oos = preds[(pred_dates >= w.test_start) & (pred_dates <= w.test_end)]
+        oos_frames.append(oos)
+    if not oos_frames:
+        return pd.DataFrame()
+    return pd.concat(oos_frames).sort_index()
