@@ -1,9 +1,20 @@
-.PHONY: test data baselines ml analysis all
+# NOTE: venv is in /tmp because the project's parent directory contains a colon
+# (/Users/harry/RL:ML Project/) which Python's venv module treats as a PATH
+# separator. Override with: make VENV=/your/path venv
 
-PYTHON = /tmp/ml-vol-momentum-venv/bin/python
+.PHONY: test data baselines ml analysis all venv
+
+VENV ?= /tmp/ml-vol-momentum-venv
+PYTHON = $(VENV)/bin/python
+PIP    = $(VENV)/bin/pip
+
+venv:
+	python3 -m venv $(VENV)
+	$(PIP) install -r requirements.txt
+	$(PIP) install -e .
 
 test:
-	/tmp/ml-vol-momentum-venv/bin/pytest tests/ -v
+	$(VENV)/bin/pytest tests/ -v
 
 data:
 	$(PYTHON) -m src.data.universe
