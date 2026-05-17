@@ -70,11 +70,19 @@ class HARRV:
             try:
                 sub = history.loc[
                     history.index.get_level_values("ticker") == tkr
-                ]
-                r = sub.droplevel("ticker")["return"]
-                rv_d = (r**2).shift(1)
-                rv_w = (r**2).rolling(5).sum().shift(1)
-                rv_m = (r**2).rolling(21).sum().shift(1)
+                ].droplevel("ticker")
+                # Use pre-computed feature columns if available (run_walk_forward
+                # passes the same feature+target panel to both fit and predict);
+                # fall back to recomputing from raw returns otherwise.
+                if "rv_d" in sub.columns and "rv_w" in sub.columns and "rv_m" in sub.columns:
+                    rv_d = sub["rv_d"]
+                    rv_w = sub["rv_w"]
+                    rv_m = sub["rv_m"]
+                else:
+                    r = sub["return"]
+                    rv_d = (r**2).shift(1)
+                    rv_w = (r**2).rolling(5).sum().shift(1)
+                    rv_m = (r**2).rolling(21).sum().shift(1)
                 log_rv_hat = (
                     coef["alpha"]
                     + coef["beta_d"] * np.log(rv_d.clip(lower=1e-12))
@@ -87,9 +95,8 @@ class HARRV:
                     "forecast_log_rv": log_rv_hat,
                     "forecast_rv": rv_hat,
                 })
-                df_out.index = pd.MultiIndex.from_product(
-                    [df_out.index, [tkr]], names=["date", "ticker"])
-                df_out = df_out.swaplevel().sort_index()
+                df_out.index = pd.MultiIndex.from_arrays(
+                    [df_out.index, [tkr] * len(df_out)], names=["date", "ticker"])
                 rows.append(df_out)
             except (np.linalg.LinAlgError, ValueError, KeyError) as e:
                 warnings.warn(f"Skipping {tkr}: {e}")
@@ -154,9 +161,8 @@ class GARCH11Model:
                     cond_var_sum = cond_var_sum / (100 ** 2)
                 df_out = pd.DataFrame({"forecast_rv": cond_var_sum,
                                        "forecast_log_rv": np.log(cond_var_sum)})
-                df_out.index = pd.MultiIndex.from_product(
-                    [df_out.index, [tkr]], names=["date", "ticker"])
-                df_out = df_out.swaplevel().sort_index()
+                df_out.index = pd.MultiIndex.from_arrays(
+                    [df_out.index, [tkr] * len(df_out)], names=["date", "ticker"])
                 rows.append(df_out)
             except (np.linalg.LinAlgError, ValueError, KeyError) as e:
                 warnings.warn(f"Skipping {tkr}: {e}")
