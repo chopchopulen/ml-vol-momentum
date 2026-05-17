@@ -2,6 +2,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+# Appropriate Sharpe threshold for white-noise canary tests.
+# For T trading days the annualised Sharpe of a zero-mean series has a standard
+# deviation of ~sqrt(252/T). With T=504 that is ~0.71, so the 99th-percentile
+# absolute value is ~1.8. Use WHITE_NOISE_SHARPE_THRESHOLD = 2.0 to avoid
+# false positives while still catching any genuine artificial alpha.
+WHITE_NOISE_SHARPE_THRESHOLD = 2.0
+
 def white_noise_panel(n_dates: int, n_stocks: int, seed: int) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2000-01-03", periods=n_dates, freq="B")
