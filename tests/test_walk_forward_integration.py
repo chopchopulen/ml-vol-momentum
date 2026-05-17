@@ -32,6 +32,11 @@ class TestRunWalkForward:
         for w in self.windows:
             mask = (oos_dates >= w.test_start) & (oos_dates <= w.test_end)
             assert mask.sum() > 0
+        # Every returned date must be within the overall test range
+        min_test_start = min(w.test_start for w in self.windows)
+        max_test_end   = max(w.test_end   for w in self.windows)
+        assert oos_dates.min() >= min_test_start
+        assert oos_dates.max() <= max_test_end
 
     def test_train_data_never_includes_oos(self):
         seen_dates = []

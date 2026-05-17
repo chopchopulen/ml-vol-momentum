@@ -117,7 +117,10 @@ def load_ohlcv(tickers: list[str], start: pd.Timestamp, end: pd.Timestamp,
 
     if not all_frames:
         return pd.DataFrame()
-    return pd.concat(all_frames).sort_index()
+    result = pd.concat(all_frames).sort_index()
+    # yfinance can return duplicate (date, ticker) entries; deduplicate keeping first
+    result = result[~result.index.duplicated(keep="first")]
+    return result
 
 
 def load_vix(start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:

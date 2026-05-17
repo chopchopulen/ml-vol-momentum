@@ -25,14 +25,7 @@ def market_data():
     prices = load_ohlcv(universe, start, end)
     return prices
 
-def _dedup_panel(prices_panel):
-    """Remove duplicate (date, ticker) entries that may arise from data download."""
-    if prices_panel.index.duplicated().any():
-        prices_panel = prices_panel[~prices_panel.index.duplicated(keep="first")]
-    return prices_panel
-
 def _make_mom_signal(prices_panel):
-    prices_panel = _dedup_panel(prices_panel)
     close = prices_panel["close"].unstack("ticker")
     log_ret = np.log(close / close.shift(1))
     mom = log_ret.rolling(252).sum().shift(21) - log_ret.rolling(21).sum().shift(1)
@@ -74,8 +67,7 @@ def _vol_scale_returns(raw_returns, window=126):
 
 class TestBarrosoReplication:
     def test_2009_crash_visible_unscaled(self, market_data):
-        deduped = _dedup_panel(market_data)
-        close_wide = deduped["close"].unstack("ticker")
+        close_wide = market_data["close"].unstack("ticker")
         log_ret = np.log(close_wide / close_wide.shift(1))
         returns_panel = log_ret.stack(future_stack=True).rename("return").to_frame()
         signal = _make_mom_signal(market_data)
@@ -91,8 +83,7 @@ class TestBarrosoReplication:
             f"Expected momentum crash in 2009 (DD < -0.20), got {max_dd_2009:.3f}"
 
     def test_scaled_sharpe_exceeds_unscaled(self, market_data):
-        deduped = _dedup_panel(market_data)
-        close_wide = deduped["close"].unstack("ticker")
+        close_wide = market_data["close"].unstack("ticker")
         log_ret = np.log(close_wide / close_wide.shift(1))
         returns_panel = log_ret.stack(future_stack=True).rename("return").to_frame()
         signal = _make_mom_signal(market_data)
