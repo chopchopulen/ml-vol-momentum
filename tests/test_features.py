@@ -52,7 +52,7 @@ class TestBuildFeaturePanel:
 
     def test_expected_feature_columns_present(self):
         feat = build_feature_panel(self.ohlcv, self.vix)
-        for col in ["rv_d","rv_w","rv_m","r2","pk","skew","kurt","vix","log_dv","ret_21"]:
+        for col in ["rv_d","rv_w","rv_m","pk","skew","kurt","vix","log_dv","ret_21"]:
             assert col in feat.columns, f"Missing feature column: {col}"
 
     def test_no_lookahead(self):

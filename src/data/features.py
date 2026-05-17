@@ -22,7 +22,6 @@ def build_feature_panel(ohlcv: pd.DataFrame, vix: pd.Series) -> pd.DataFrame:
         rv_d  = realized_variance(r, 1)
         rv_w  = realized_variance(r, 5)
         rv_m  = realized_variance(r, 21)
-        r2    = (r ** 2).shift(1)
         pk    = parkinson(grp["high"], grp["low"], window=5)
         skew  = r.rolling(63).skew().shift(1)
         kurt  = r.rolling(63).kurt().shift(1)
@@ -34,7 +33,6 @@ def build_feature_panel(ohlcv: pd.DataFrame, vix: pd.Series) -> pd.DataFrame:
             "rv_d": rv_d,
             "rv_w": rv_w,
             "rv_m": rv_m,
-            "r2":   r2,
             "pk":   pk,
             "skew": skew,
             "kurt": kurt,
