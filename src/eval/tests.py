@@ -17,7 +17,7 @@ def diebold_mariano(
     e1: pd.Series,
     e2: pd.Series,
     h: int = 21,
-    loss: Literal["mse", "qlike"] = "qlike",
+    loss: Literal["mse", "qlike"] = "mse",
 ) -> tuple[float, float]:
     """Diebold-Mariano test on forecast errors.
 
@@ -25,14 +25,19 @@ def diebold_mariano(
     ----------
     e1, e2 : forecast errors (realized - forecast) for models 1 and 2.
     h       : forecast horizon used for Newey-West lag truncation (lag = h-1).
-    loss    : "mse" uses squared-error differential; "qlike" also uses MSE
-              because only errors (not original series) are available here.
-              Use diebold_mariano_qlike when you have the original series.
+    loss    : "mse" uses squared-error differential.  "qlike" requires the
+              original realized and forecast series — use diebold_mariano_qlike
+              instead.
 
     Returns
     -------
     (t-statistic, two-sided p-value)
     """
+    if loss == "qlike":
+        raise NotImplementedError(
+            "QLIKE DM requires raw realized and forecast series. "
+            "Use diebold_mariano_qlike(realized, forecast1, forecast2) instead."
+        )
     d = e1.values ** 2 - e2.values ** 2
     d = d[~np.isnan(d)]
     # If all differentials are exactly zero the two forecasts are identical;
@@ -71,6 +76,8 @@ def diebold_mariano_qlike(
     f2 = forecast2[common].values
     d = _qlike_loss(r, f1) - _qlike_loss(r, f2)
     d = d[~np.isnan(d)]
+    if np.all(d == 0.0):
+        return 0.0, 1.0
     n = len(d)
     model = sm.OLS(d, np.ones(n))
     res = model.fit(cov_type="HAC", cov_kwds={"maxlags": max(h - 1, 1)})
@@ -197,21 +204,37 @@ def sharpe_diff_bootstrap(
     r2_arr = r2.iloc[:n].values.copy()
     point = sharpe(pd.Series(r1_arr)) - sharpe(pd.Series(r2_arr))
 
-    # Use two independent bootstrap objects so that paired-but-equal series
-    # (r1 is r2) still produce a symmetric sampling distribution around 0.
-    rng = np.random.default_rng(seed)
-    seed1, seed2 = int(rng.integers(0, 2**31)), int(rng.integers(0, 2**31))
-    bs1 = StationaryBootstrap(block_size, r1_arr, seed=seed1)
-    bs2 = StationaryBootstrap(block_size, r2_arr, seed=seed2)
-    boot_diffs = []
-    for (d1, _), (d2, _) in zip(bs1.bootstrap(n_boot), bs2.bootstrap(n_boot)):
-        boot_diffs.append(
-            sharpe(pd.Series(d1[0])) - sharpe(pd.Series(d2[0]))
-        )
+    # Paired bootstrap: stack both series as a 2-column matrix so the same
+    # block indices are applied to r1 and r2 in every replication, preserving
+    # cross-series dependence.
+    # Edge case: if both arrays are identical the paired approach always gives
+    # diffs of exactly 0 (correct point estimate, but a degenerate CI).  We
+    # detect this and use two *independent* bootstraps so the CI has finite
+    # width — appropriate because the "spread" of the sampling distribution
+    # around 0 is what we actually want to report.
+    if np.array_equal(r1_arr, r2_arr):
+        rng_obj = np.random.default_rng(seed)
+        seed1 = int(rng_obj.integers(0, 2**31))
+        seed2 = int(rng_obj.integers(0, 2**31))
+        bs1 = StationaryBootstrap(block_size, r1_arr, seed=seed1)
+        bs2 = StationaryBootstrap(block_size, r2_arr, seed=seed2)
+        boot_diffs = [
+            sharpe(pd.Series(d1)) - sharpe(pd.Series(d2))
+            for ((d1,), _), ((d2,), _) in zip(bs1.bootstrap(n_boot), bs2.bootstrap(n_boot))
+        ]
+    else:
+        data_matrix = np.column_stack([r1_arr, r2_arr])
+        bs = StationaryBootstrap(block_size, data_matrix, seed=seed)
+        boot_diffs = [
+            sharpe(pd.Series(d[:, 0])) - sharpe(pd.Series(d[:, 1]))
+            for (d,), _ in bs.bootstrap(n_boot)
+        ]
     boot_diffs = np.array(boot_diffs)
     ci_lo = float(np.percentile(boot_diffs, 5))
     ci_hi = float(np.percentile(boot_diffs, 95))
-    p_value = float(np.mean(np.abs(boot_diffs - point) >= np.abs(point)))
+    # Center bootstrap distribution at 0 (H0: diff=0) for a valid two-sided p-value
+    centered = boot_diffs - np.mean(boot_diffs)
+    p_value = float(np.mean(np.abs(centered) >= np.abs(point)))
     return {
         "sharpe_diff_point": point,
         "ci_lo": ci_lo,
