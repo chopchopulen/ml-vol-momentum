@@ -4,6 +4,7 @@ import pytest
 from src.strategy.momentum import momentum_signal
 from src.strategy.scaling import vol_scale
 from src.strategy.portfolio import build_portfolios
+from src.strategy.costs import apply_costs
 
 
 def _make_prices_panel(n_dates=300, n_tickers=5, trend=0.001, seed=42):
@@ -182,3 +183,52 @@ class TestBuildPortfolios:
         first_date_weights = result.xs(first_sig_date, level="date")["weight"]
         assert first_date_weights.isna().all(), \
             "Weights at first signal date should be NaN (signals not yet shifted)"
+
+
+class TestApplyCosts:
+    def _make_constant_weights(self, n_dates=30, n_tickers=5):
+        dates = pd.date_range("2015-01-02", periods=n_dates, freq="B")
+        tickers = [f"T{i}" for i in range(n_tickers)]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+        w = pd.DataFrame({"weight": 0.2}, index=idx)
+        return w
+
+    def _make_returns(self, n_dates=30, n_tickers=5, r=0.001):
+        dates = pd.date_range("2015-01-02", periods=n_dates, freq="B")
+        tickers = [f"T{i}" for i in range(n_tickers)]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+        return pd.DataFrame({"return": r}, index=idx)
+
+    def test_constant_weights_zero_cost_after_first_day(self):
+        """After the first rebalance, constant weights have zero turnover."""
+        w = self._make_constant_weights()
+        r = self._make_returns()
+        net = apply_costs(w, r, cost_bps=10.0)
+        # Gross return for constant 0.2 in 5 tickers = 0.001 * 5 * 0.2
+        expected_gross = 0.001 * 5 * 0.2
+        assert abs(net.iloc[-1] - expected_gross) < 1e-9
+
+    def test_high_turnover_reduces_net_returns(self):
+        """Full portfolio flip every day reduces net return vs no-cost."""
+        dates = pd.date_range("2015-01-02", periods=20, freq="B")
+        tickers = ["A", "B"]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+        flip_weights = []
+        for i, dt in enumerate(dates):
+            if i % 2 == 0:
+                flip_weights.extend([(dt, "A", 1.0), (dt, "B", 0.0)])
+            else:
+                flip_weights.extend([(dt, "A", 0.0), (dt, "B", 1.0)])
+        w_df = pd.DataFrame(flip_weights, columns=["date", "ticker", "weight"])
+        w_df = w_df.set_index(["date", "ticker"])
+        r = self._make_returns(n_dates=20, n_tickers=2, r=0.001)
+        net_with_cost = apply_costs(w_df, r, cost_bps=10.0)
+        net_no_cost   = apply_costs(w_df, r, cost_bps=0.0)
+        assert net_with_cost.mean() < net_no_cost.mean()
+
+    def test_returns_series_indexed_by_date(self):
+        w = self._make_constant_weights()
+        r = self._make_returns()
+        net = apply_costs(w, r, cost_bps=10.0)
+        assert isinstance(net, pd.Series)
+        assert net.index.name == "date"
