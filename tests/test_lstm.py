@@ -1,0 +1,80 @@
+import numpy as np
+import pandas as pd
+import pytest
+from src.models.lstm_model import LSTMForecaster
+
+FEATURE_COLS = ["rv_d", "rv_w", "rv_m", "pk", "skew", "kurt", "vix", "log_dv", "ret_21"]
+
+
+def _make_synthetic_panel(n_dates=200, n_tickers=5, seed=42):
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2005-01-03", periods=n_dates, freq="B")
+    tickers = [f"T{i}" for i in range(n_tickers)]
+    idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+    data = {}
+    for col in FEATURE_COLS:
+        data[col] = np.abs(rng.normal(1e-4, 5e-5, len(idx)))
+    data["target_log_rv"] = rng.normal(-10, 1, len(idx))
+    return pd.DataFrame(data, index=idx)
+
+
+class TestLSTMForecaster:
+    def test_implements_forecaster_protocol(self):
+        from src.models.forecaster import Forecaster
+        m = LSTMForecaster()
+        assert isinstance(m, Forecaster)
+
+    def test_fit_stores_model(self):
+        panel = _make_synthetic_panel()
+        m = LSTMForecaster()
+        m.fit(panel, seed=0)
+        assert m.model_ is not None
+
+    def test_predict_returns_correct_columns(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:panel.shape[0] * 4 // 5]
+        test  = panel.iloc[panel.shape[0] * 4 // 5:]
+        m = LSTMForecaster()
+        m.fit(train, seed=0)
+        out = m.predict(test)
+        assert "forecast_log_rv" in out.columns
+        assert "forecast_rv" in out.columns
+
+    def test_predict_index_is_date_ticker(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:panel.shape[0] * 4 // 5]
+        test  = panel.iloc[panel.shape[0] * 4 // 5:]
+        m = LSTMForecaster()
+        m.fit(train, seed=0)
+        out = m.predict(test)
+        assert out.index.names == ["date", "ticker"]
+
+    def test_forecast_rv_positive(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:panel.shape[0] * 4 // 5]
+        test  = panel.iloc[panel.shape[0] * 4 // 5:]
+        m = LSTMForecaster()
+        m.fit(train, seed=0)
+        out = m.predict(test)
+        assert (out["forecast_rv"].dropna() > 0).all()
+
+    def test_different_seeds_give_different_predictions(self):
+        """Two different seeds should produce different forecasts (randomness matters)."""
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test  = panel.iloc[160:]
+        m0 = LSTMForecaster()
+        m0.fit(train, seed=0)
+        out0 = m0.predict(test)
+
+        m1 = LSTMForecaster()
+        m1.fit(train, seed=1)
+        out1 = m1.predict(test)
+
+        common = out0.index.intersection(out1.index)
+        assert len(common) > 0
+        # Not identical (with probability 1)
+        assert not np.allclose(
+            out0.loc[common, "forecast_log_rv"].values,
+            out1.loc[common, "forecast_log_rv"].values,
+        ), "Two different seeds produced identical predictions — seeding not working"
