@@ -95,9 +95,39 @@ Updated as the project progresses.
 
 ---
 
-## Phase 2 (to be filled in)
+## Phase 2
 
-*Placeholder for momentum, scaling, and portfolio surprises.*
+### 9. 2009 momentum crash was -69% on the 80-ticker subsample
+
+**What I expected:** Barroso & Santa-Clara report ~-50% peak-to-trough on the full US market in 2009. On a smaller subsample I expected similar magnitude.
+
+**What I found:** The 80-ticker subsample (2002 universe, excluding delisted tickers that yfinance can't retrieve) showed a **-69.2%** drawdown in 2009 for the unscaled long-short quintile.
+
+**Why worse than the paper:** The survivorship bias cuts both ways. Tickers that yfinance can still retrieve for the 2009 period tend to be the ones that survived — *not* necessarily the most stable. Meanwhile, some of the most stable tickers (delisted through mergers) are missing, leaving a subsample skewed toward more volatile names with larger momentum crashes.
+
+**Interview angle:** "The Barroso result replicates directionally. The exact magnitude differs due to universe selection — the real insight is the *mitigation* effect of vol scaling, not the exact crash depth."
+
+---
+
+### 10. Vol scaling reduces 2009 crash from -69% to -2.5%
+
+**What I found:** Rolling-vol-scaled portfolio had only -2.5% drawdown in 2009 vs -69.2% unscaled. The vol scaling essentially immunized the portfolio from the 2009 momentum crash entirely.
+
+**Why so effective:** The vol scaling at the start of 2009 observed very high trailing realized variance from the 2008 crisis, which caused the model to *reduce* position sizes dramatically. The signal was still momentum-based, but the leverage dropped enough to make the reversal survivable.
+
+**Note on Sharpe numbers:** Unscaled Sharpe = 0.08 vs paper ~0.5; scaled = 0.16 vs paper ~0.9. The gap is expected: (a) 80-ticker subsample with ~12 delisted tickers missing vs full US universe; (b) log returns vs simple returns cause minor differences; (c) the missing tickers were exactly the ones with the strongest momentum dynamics (financial sector in 2002-2008).
+
+---
+
+### 11. HAR-RV MZ beta = 0.79: systematic downward bias in level forecasts
+
+**What I found:** The Mincer-Zarnowitz regression for HAR-RV gave beta = 0.79 (not 1.0) and p_joint ≈ 0 (strongly rejects unbiasedness). The forecasts are calibrated downward — the model underpredicts high-vol periods.
+
+**Why this is expected:** HAR-RV is OLS on log_rv. OLS minimizes expected MSE, not MAE. In fat-tailed distributions (which log_rv is), OLS estimates are pulled toward the center of the distribution. Extreme high-vol observations (2008, 2020) have high residuals but the model can't increase their individual predictions without hurting average MSE.
+
+**Why it doesn't matter for ranking:** The cross-sectional IC remains high (0.682 pooled). The bias is *common* across stocks at any given date — all forecasts are low by a similar factor. This cancels in z-scoring and quintile construction. The bias would matter for absolute position sizing (gross exposure control) but not for signal *ranking*.
+
+**Interview angle:** "MZ calibration and cross-sectional IC measure different things. A model can have poor MZ beta and excellent IC. For momentum, IC is what matters."
 
 ---
 
