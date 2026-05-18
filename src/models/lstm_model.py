@@ -15,9 +15,9 @@ _SEQ_LEN = _LCFG["sequence_length"]  # 60
 
 
 class _LSTMNet(nn.Module):
-    def __init__(self, n_features: int, hidden: int, dropout: float):
+    def __init__(self, n_features: int, hidden: int, num_layers: int, dropout: float):
         super().__init__()
-        self.lstm = nn.LSTM(n_features, hidden, batch_first=True)
+        self.lstm = nn.LSTM(n_features, hidden, num_layers=num_layers, batch_first=True)
         self.drop = nn.Dropout(dropout)
         self.head = nn.Linear(hidden, 1)
 
@@ -115,7 +115,7 @@ class LSTMForecaster(Forecaster):
         n_feat = len(feat_cols)
 
         # Always initialise the model (may be untrained if insufficient data)
-        self.model_ = _LSTMNet(n_feat, _LCFG["hidden_size"], _LCFG["dropout"])
+        self.model_ = _LSTMNet(n_feat, _LCFG["hidden_size"], _LCFG["num_layers"], _LCFG["dropout"])
 
         if len(X) == 0:
             # No sequences to train on; model stays at random initialisation

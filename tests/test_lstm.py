@@ -78,3 +78,38 @@ class TestLSTMForecaster:
             out0.loc[common, "forecast_log_rv"].values,
             out1.loc[common, "forecast_log_rv"].values,
         ), "Two different seeds produced identical predictions — seeding not working"
+
+    def test_normalisation_uses_train_stats_only(self):
+        """Normalisation stats must be fit on train only — verify they don't change when test data changes."""
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test_a = panel.iloc[160:170]
+        test_b = panel.iloc[160:]
+
+        m = LSTMForecaster()
+        m.fit(train, seed=0)
+        # Stats stored from training window
+        mean_after_fit = m._feat_mean.copy()
+
+        # Predict on two different test windows — stats must be unchanged
+        m.predict(test_a)
+        assert np.allclose(m._feat_mean, mean_after_fit), "Feature mean changed after predict()"
+        m.predict(test_b)
+        assert np.allclose(m._feat_mean, mean_after_fit), "Feature mean changed after predict()"
+
+    def test_mse_resid_none_before_fit(self):
+        """mse_resid_ must be None before fit() and a positive float after."""
+        m = LSTMForecaster()
+        assert m.mse_resid_ is None
+        panel = _make_synthetic_panel(n_dates=200)
+        m.fit(panel, seed=0)
+        assert m.mse_resid_ is not None
+        assert isinstance(m.mse_resid_, float)
+        assert m.mse_resid_ > 0
+
+    def test_predict_raises_before_fit(self):
+        """predict() must raise RuntimeError if called before fit()."""
+        m = LSTMForecaster()
+        panel = _make_synthetic_panel(n_dates=200)
+        with pytest.raises(RuntimeError):
+            m.predict(panel)
