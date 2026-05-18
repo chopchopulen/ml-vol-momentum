@@ -17,7 +17,7 @@ class GBMForecaster(Forecaster):
 
     def __init__(self):
         self.booster_: lgb.Booster | None = None
-        self.mse_resid_: float = 1.0
+        self.mse_resid_: float | None = None
 
     def _prepare_X(self, panel: pd.DataFrame) -> tuple[pd.DataFrame, pd.Index]:
         """Extract feature matrix and valid-row index from panel."""
@@ -30,6 +30,7 @@ class GBMForecaster(Forecaster):
         return valid, valid.index
 
     def fit(self, train: pd.DataFrame) -> None:
+        train = train.sort_index(level="date")
         X, idx = self._prepare_X(train)
         y = train.loc[idx, "target_log_rv"].values
         # Drop rows where target is also NaN or infinite
@@ -45,7 +46,7 @@ class GBMForecaster(Forecaster):
         X_val, y_val = X.iloc[n - n_val :], y[n - n_val :]
 
         cat_cols = [c for c in CATEGORICAL_COLS if c in X_tr.columns]
-        dtrain = lgb.Dataset(X_tr, label=y_tr, categorical_feature=cat_cols, free_raw_data=False)
+        dtrain = lgb.Dataset(X_tr, label=y_tr, categorical_feature=cat_cols)
         dval   = lgb.Dataset(X_val, label=y_val, categorical_feature=cat_cols, reference=dtrain)
 
         params = {
@@ -70,12 +71,13 @@ class GBMForecaster(Forecaster):
             valid_sets=[dval],
             callbacks=callbacks,
         )
-        # Store sigma² = MSE of training residuals for Jensen correction
-        train_pred = self.booster_.predict(X_tr)
-        self.mse_resid_ = float(np.mean((y_tr - train_pred) ** 2))
+        # Store sigma² = MSE of validation residuals for Jensen correction
+        # (val is held-out from early stopping, so this gives an unbiased sigma² estimate)
+        val_pred = self.booster_.predict(X_val)
+        self.mse_resid_ = float(np.mean((y_val - val_pred) ** 2))
 
     def predict(self, history: pd.DataFrame) -> pd.DataFrame:
-        if self.booster_ is None:
+        if self.booster_ is None or self.mse_resid_ is None:
             raise RuntimeError("Call fit() before predict()")
         X, idx = self._prepare_X(history)
         log_rv_hat = self.booster_.predict(X)
