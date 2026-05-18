@@ -39,7 +39,7 @@ def diebold_mariano(
             "Use diebold_mariano_qlike(realized, forecast1, forecast2) instead."
         )
     d = e1.values ** 2 - e2.values ** 2
-    d = d[~np.isnan(d)]
+    d = d[np.isfinite(d)]
     # If all differentials are exactly zero the two forecasts are identical;
     # the test statistic is 0 and the p-value is 1 (no evidence of difference).
     if np.all(d == 0.0):
@@ -75,7 +75,7 @@ def diebold_mariano_qlike(
     f1 = forecast1[common].values
     f2 = forecast2[common].values
     d = _qlike_loss(r, f1) - _qlike_loss(r, f2)
-    d = d[~np.isnan(d)]
+    d = d[np.isfinite(d)]
     if np.all(d == 0.0):
         return 0.0, 1.0
     n = len(d)
@@ -92,7 +92,7 @@ def mincer_zarnowitz(realized: pd.Series, forecast: pd.Series) -> dict:
     common = realized.index.intersection(forecast.index)
     r = realized[common].values
     f = forecast[common].values
-    mask = ~(np.isnan(r) | np.isnan(f))
+    mask = np.isfinite(r) & np.isfinite(f)
     r, f = r[mask], f[mask]
     X = sm.add_constant(f)
     res = sm.OLS(r, X).fit()
@@ -163,7 +163,7 @@ def model_confidence_set(
     from arch.bootstrap import MCS
 
     mcs = MCS(
-        losses.dropna(),
+        losses.replace([np.inf, -np.inf], np.nan).dropna(),
         size=alpha,
         block_size=block_size,
         reps=n_boot,

@@ -24,6 +24,9 @@ class RollingVolModel:
         for tkr, grp in history.groupby(level="ticker"):
             r = grp.droplevel("ticker")["return"]
             rv = (r ** 2).rolling(self.window).sum()
+            # Zero rv (all-zero returns in window) → log(0) = -inf.
+            # Drop those rows rather than clip: they indicate bad/halted data.
+            rv = rv[rv > 0]
             sub = pd.DataFrame({"forecast_rv": rv, "forecast_log_rv": np.log(rv)})
             sub.index = pd.MultiIndex.from_arrays(
                 [sub.index, [tkr] * len(sub)], names=["date", "ticker"])
@@ -39,7 +42,8 @@ class HARRV:
 
     def _fit_ticker(self, tkr: str, df: pd.DataFrame) -> tuple[str, dict]:
         sub = df.loc[df.index.get_level_values("ticker") == tkr].copy()
-        sub = sub[["rv_d", "rv_w", "rv_m", "target_log_rv"]].dropna()
+        sub = sub[["rv_d", "rv_w", "rv_m", "target_log_rv"]].replace(
+            [np.inf, -np.inf], np.nan).dropna()
         if len(sub) < 30:
             return tkr, {}
         log_rv_d = np.log(sub["rv_d"].clip(lower=1e-12))
@@ -160,6 +164,8 @@ class GARCH11Model:
                 cond_var_sum = fcast.variance.sum(axis=1)
                 if self.rescale:
                     cond_var_sum = cond_var_sum / (100 ** 2)
+                # Guard against degenerate GARCH output (near-zero variance).
+                cond_var_sum = cond_var_sum[cond_var_sum > 0]
                 df_out = pd.DataFrame({"forecast_rv": cond_var_sum,
                                        "forecast_log_rv": np.log(cond_var_sum)})
                 df_out.index = pd.MultiIndex.from_arrays(

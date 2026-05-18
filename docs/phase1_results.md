@@ -1,5 +1,63 @@
 # Phase 1 Frozen Results
 
+## Bugs Found Post-Freeze and Revised Numbers
+
+This section documents bugs discovered after the initial `phase1-complete` tag (commit `9518114`, 2026-05-17) and before Phase 2 began.
+
+### Bug A: `log(0) = -inf` surviving `dropna()` (targets.py + baselines.py)
+
+**Introduced:** Implicitly at project start — `np.log(rv)` with no guard against `rv = 0`.
+
+**Fixed:** Commit `9ae9f8e` (targets.py), and the audit pass below.
+
+**Affected files:** `src/data/targets.py`, `src/models/baselines.py` (RollingVolModel, GARCH11Model), `src/data/features.py` (log_dv), `src/eval/tests.py` (DM, MZ, MCS).
+
+**Root cause:** Pandas `dropna()` only drops `NaN`, not `np.inf` or `-np.inf`. Zero realized variance (stocks with no returns for 21 consecutive days — halted trading, stale yfinance data for delisted tickers) produced `log(0) = -inf` which silently survived `dropna()`. Same pattern appeared in `log_dv` (zero trading volume) and forecast log transforms.
+
+**Effect:** OOS years 2013, 2014, 2015, 2021 showed R² = 1.000 exactly. Root: `-inf` in `target_log_rv` made `SS_tot → ∞` and `1 - SS_res/SS_tot = 1.0`. The initial 3-year evaluation (2003–2005) happened to miss all affected years, so the frozen baseline was wrong.
+
+**Fix pattern applied everywhere:**
+- For *target* values: drop rows where `rv = 0` (halted data) rather than clip — keep `NaN` rows (legitimate trailing window).
+- For *feature* values: replace `0` with `NaN` before log transform so downstream `dropna()` removes the row.
+- For *forecasts*: drop rows where `forecast_rv = 0` rather than clip.
+- For *statistical tests* (DM, MZ, MCS): use `np.isfinite()` filter instead of `~np.isnan()`.
+
+**Why it survived initial review:** Unit tests used synthetic data with constant non-zero returns. Leakage canary tested a specific failure mode (future return as signal), not degenerate-data pathology. The 3-year evaluation subsample (2003–2005) did not include any affected years by chance.
+
+### Bug B: `sm.add_constant` silently dropping intercept (baselines.py)
+
+**Introduced:** Implicitly at project start.
+
+**Fixed:** Commit `2ad8609`.
+
+**Affected file:** `src/models/baselines.py` (`HARRV._fit_ticker`).
+
+**Root cause:** `sm.add_constant(X)` by default checks whether the matrix `X` already contains a constant column and *silently omits* adding the intercept if it does. When a ticker's log-rv features were all identical (e.g., all returns zero → clipped to `log(1e-12)` → constant), this produced a 3-column design matrix. `res.params[3]` then raised `IndexError`.
+
+**Effect:** HAR-RV fit crashed silently for affected tickers (caught by `try/except`, logged as a warning, ticker skipped). No R² inflation, but tickers with degenerate data were silently excluded from the model.
+
+**Fix:** `sm.add_constant(X, has_constant="add")` forces the constant regardless.
+
+### Revised numbers (post-fix, full 22-year OOS)
+
+The 3-year subsample numbers in the original freeze (`0.351 / 0.219 / 0.205`, pooled `0.258`) remain accurate — those years were unaffected by Bug A. The full 22-year picture is documented below. **The numbers you cite in interviews are the full-22-year pooled R² = 0.328.**
+
+### What was NOT affected
+
+The Barroso & Santa-Clara (2015) replication tests (`test_replication.py`) were re-run on the post-fix codebase and **both tests still pass**. The replication was not using target RV or log transforms — it used raw returns and rolling vol scaling, neither of which touched the zero-RV bug path.
+
+### New canaries added (commit following this document)
+
+1. **`test_targets.py::test_degenerate_target_canary`**: Injects a halted-stock (all-zero returns) into a synthetic panel, asserts that `forward_rv` produces no `-inf` in `target_log_rv`. This canary would have caught Bug A.
+
+2. **`test_baselines.py::test_harrv_design_matrix_column_stability`**: Verifies that `HARRV._fit_ticker` always returns exactly 5 keys (alpha, beta_d, beta_w, beta_m, sigma2) regardless of whether the input features are degenerate. This canary would have caught Bug B.
+
+### Reflection
+
+Both bugs had the same shape: an upstream pathology (zero, constant column) produced a sentinel value (-inf, missing column), and a downstream function accepted the sentinel silently (`dropna()` does not drop `-inf`; `sm.add_constant` does not warn when dropping a constant). The initial test suite used synthetic data with no pathological inputs, so neither canary fired. The key lesson: every bug that survives canary review should become a canary for the specific pathological input that exposed it.
+
+---
+
 Baseline numbers computed on commit `71d0067` (post-fix for MultiIndex ordering).
 These are locked in before Phase 2 strategy code is written.
 

@@ -87,6 +87,55 @@ class TestHARRV:
         np.testing.assert_allclose(
             our_coef["beta_m"], res.params[3], atol=0.01)
 
+    def test_harrv_design_matrix_column_stability(self):
+        """HARRV._fit_ticker must always produce exactly 4 params (intercept + 3 betas).
+        sm.add_constant silently drops the constant when a feature column is constant
+        (e.g. all-zero rv clipped to log(1e-12)). This canary catches that regression."""
+        from src.data.targets import forward_rv
+        import statsmodels.api as sm
+
+        rng = np.random.default_rng(42)
+        n = 500
+        dates = pd.date_range("2005-01-03", periods=n, freq="B")
+
+        # Ticker A: normal data
+        rv_d_a = np.abs(rng.normal(1e-4, 5e-5, n))
+        # Ticker B: degenerate — rv_d is all-zero (all-zero returns for entire history)
+        rv_d_b = np.zeros(n)
+        rv_w_b = np.zeros(n)
+        rv_m_b = np.zeros(n)
+        # Ticker C: normal with one all-zero window period
+        rv_d_c = np.abs(rng.normal(1e-4, 5e-5, n))
+        rv_d_c[:30] = 0.0  # first 30 days zero
+
+        tickers = ["A", "B", "C"]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date","ticker"])
+
+        rows = []
+        for tkr, rv_d_vals in [("A", rv_d_a), ("B", rv_d_b), ("C", rv_d_c)]:
+            rv_d = pd.Series(rv_d_vals, index=dates)
+            rv_w = pd.Series(np.abs(rng.normal(1e-4, 5e-5, n)), index=dates)
+            rv_m = pd.Series(np.abs(rng.normal(1e-4, 5e-5, n)), index=dates)
+            log_rv_target = np.log(rv_d.clip(lower=1e-12)) * 0.4 + rng.normal(0, 0.2, n)
+            sub = pd.DataFrame({
+                "rv_d": rv_d, "rv_w": rv_w, "rv_m": rv_m,
+                "target_log_rv": log_rv_target,
+            })
+            sub.index = pd.MultiIndex.from_arrays([dates, [tkr]*n], names=["date","ticker"])
+            rows.append(sub)
+        panel = pd.concat(rows)
+
+        m = HARRV()
+        # _fit_ticker should produce exactly 4 params for any ticker with enough data
+        for tkr in ["A", "C"]:
+            _, coef = m._fit_ticker(tkr, panel)
+            assert len(coef) == 5, (  # alpha, beta_d, beta_w, beta_m, sigma2
+                f"HARRV._fit_ticker returned {len(coef)} keys for ticker {tkr}, "
+                f"expected 5 (alpha + 3 betas + sigma2). "
+                f"sm.add_constant may have silently dropped the intercept."
+            )
+
+
 class TestGARCH11:
     def test_fit_converges_on_synthetic_panel(self):
         panel = _make_panel(n_dates=400, n_tickers=2)

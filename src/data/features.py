@@ -8,7 +8,9 @@ def realized_variance(returns: pd.Series, window: int) -> pd.Series:
     return rv.shift(1)
 
 def parkinson(high: pd.Series, low: pd.Series, window: int) -> pd.Series:
-    log_hl_sq = (np.log(high / low)) ** 2
+    # low=0 (bad data) → log(inf) = inf. Replace with NaN.
+    hl_ratio = (high / low).where(low > 0)
+    log_hl_sq = (np.log(hl_ratio)) ** 2
     pk = log_hl_sq.rolling(window).mean() / (4 * math.log(2))
     return pk.shift(1)
 
@@ -26,7 +28,10 @@ def build_feature_panel(ohlcv: pd.DataFrame, vix: pd.Series) -> pd.DataFrame:
         skew  = r.rolling(63).skew().shift(1)
         kurt  = r.rolling(63).kurt().shift(1)
         vix_s = vix.reindex(close.index).shift(1)
-        log_dv = np.log(grp["volume"] * close).shift(1)
+        # volume=0 on halted days → log(0)=-inf. Replace with NaN so
+        # downstream dropna() cleans these rows rather than propagating -inf.
+        dv = grp["volume"] * close
+        log_dv = dv.where(dv > 0).apply(np.log).shift(1)
         ret_21 = r.rolling(21).sum().shift(1)
 
         feat = pd.DataFrame({
