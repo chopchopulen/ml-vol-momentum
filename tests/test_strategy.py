@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from src.strategy.momentum import momentum_signal
 from src.strategy.scaling import vol_scale
+from src.strategy.portfolio import build_portfolios
 
 
 def _make_prices_panel(n_dates=300, n_tickers=5, trend=0.001, seed=42):
@@ -126,3 +127,58 @@ class TestVolScale:
         sigma = pd.DataFrame({"forecast_rv": rv_vals}, index=idx)
         w = vol_scale(sig, sigma, target_vol=0.10)
         assert (w["weight"] == 0.0).all()
+
+
+class TestBuildPortfolios:
+    def _make_signal_panel(self, n_dates=60, n_tickers=20, seed=0):
+        rng = np.random.default_rng(seed)
+        dates = pd.date_range("2015-01-02", periods=n_dates, freq="B")
+        tickers = [f"T{i:02d}" for i in range(n_tickers)]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+        sig = rng.standard_normal(n_dates * n_tickers)
+        return pd.DataFrame({"signal": sig}, index=idx)
+
+    def _make_weights_panel(self, n_dates=60, n_tickers=20, seed=2):
+        rng = np.random.default_rng(seed)
+        dates = pd.date_range("2015-01-02", periods=n_dates, freq="B")
+        tickers = [f"T{i:02d}" for i in range(n_tickers)]
+        idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
+        w = rng.standard_normal(n_dates * n_tickers)
+        return pd.DataFrame({"weight": w}, index=idx)
+
+    def test_long_short_quintile_has_weight_column(self):
+        sig = self._make_signal_panel()
+        result = build_portfolios(sig, mode="long_short_quintile")
+        assert "weight" in result.columns
+
+    def test_long_short_quintile_weights_sum_near_zero(self):
+        """Long and short legs are equal in magnitude, so sum ≈ 0 per date."""
+        sig = self._make_signal_panel()
+        result = build_portfolios(sig, mode="long_short_quintile")
+        result_nonan = result.dropna()
+        dates = result_nonan.index.get_level_values("date").unique()
+        for dt in dates[:5]:
+            total = result_nonan.xs(dt, level="date")["weight"].sum()
+            assert abs(total) < 1e-9, f"Sum of weights at {dt} = {total:.6f}, expected ~0"
+
+    def test_weights_shifted_by_one_day(self):
+        """First weight date must be AFTER first signal date (weights are shifted +1)."""
+        sig = self._make_signal_panel()
+        result = build_portfolios(sig, mode="long_short_quintile")
+        sig_dates = sig.index.get_level_values("date").unique()
+        result_dates = result.dropna(how="all").index.get_level_values("date").unique()
+        assert result_dates[0] > sig_dates[0]
+
+    def test_long_only_quintile_weights_nonnegative(self):
+        sig = self._make_signal_panel()
+        result = build_portfolios(sig, mode="long_only_quintile")
+        assert (result["weight"].dropna() >= 0).all()
+
+    def test_no_close_to_close_leakage(self):
+        """Weight using signal at t should be NaN at date t itself (shifted to t+1)."""
+        sig = self._make_signal_panel(n_dates=60, n_tickers=20)
+        result = build_portfolios(sig, mode="long_short_quintile")
+        first_sig_date = sig.index.get_level_values("date").unique()[0]
+        first_date_weights = result.xs(first_sig_date, level="date")["weight"]
+        assert first_date_weights.isna().all(), \
+            "Weights at first signal date should be NaN (signals not yet shifted)"
