@@ -23,13 +23,18 @@ def vol_scale(
     for dt in dates:
         try:
             sig_dt = signal.xs(dt, level="date")["signal"].dropna()
-            rv_dt = sigma_hat.xs(dt, level="date")["forecast_rv"].reindex(sig_dt.index).dropna()
-            common = sig_dt.index.intersection(rv_dt.index)
-            sig_dt = sig_dt[common]
+            sig_std = sig_dt.std()
+            if sig_std == 0 or np.isnan(sig_std):
+                z = pd.Series(0.0, index=sig_dt.index)
+            else:
+                z = (sig_dt - sig_dt.mean()) / sig_std
+            rv_dt = sigma_hat.xs(dt, level="date")["forecast_rv"].reindex(z.index).dropna()
+            common = z.index.intersection(rv_dt.index)
+            z = z[common]
             rv_dt = rv_dt[common]
             ann_vol = np.sqrt(rv_dt * 252)
             ann_vol = ann_vol.replace(0, np.nan)
-            w = (target_vol / ann_vol) * sig_dt
+            w = (target_vol / ann_vol) * z
             w = w.fillna(0.0)
             sub = w.rename("weight").to_frame()
             sub.index = pd.MultiIndex.from_arrays(

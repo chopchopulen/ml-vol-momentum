@@ -91,11 +91,12 @@ class TestVolScale:
         assert "weight" in w.columns
 
     def test_higher_vol_gets_lower_weight(self):
-        """A stock with 2x the forecast vol should get ~0.5x the weight."""
+        """A stock with 2x the forecast vol should get ~0.5x the weight (same |signal|)."""
         dates = pd.date_range("2015-01-02", periods=5, freq="B")
         tickers = ["LOW", "HIGH"]
         idx = pd.MultiIndex.from_product([dates, tickers], names=["date", "ticker"])
-        sig = pd.DataFrame({"signal": [1.0, 1.0] * 5}, index=idx)
+        # Distinct signals so cross-sectional std > 0; LOW positive, HIGH negative
+        sig = pd.DataFrame({"signal": [1.0, -1.0] * 5}, index=idx)
         # HIGH has 4x the daily variance of LOW
         rv_vals = [0.0001, 0.0004] * 5
         sigma = pd.DataFrame({"forecast_rv": rv_vals}, index=idx)
@@ -103,8 +104,11 @@ class TestVolScale:
         last_date = dates[-1]
         w_low  = w.xs(last_date, level="date").loc["LOW", "weight"]
         w_high = w.xs(last_date, level="date").loc["HIGH", "weight"]
-        assert w_low > w_high
-        assert abs(w_low / w_high - 2.0) < 0.01
+        # LOW: z=+1, ann_vol≈0.159; HIGH: z=-1, ann_vol≈0.317
+        # |w_low|/|w_high| = 0.317/0.159 ≈ 2.0
+        assert w_low > 0   # positive z, lower vol → positive weight
+        assert w_high < 0  # negative z → negative weight
+        assert abs(abs(w_low) / abs(w_high) - 2.0) < 0.01
 
     def test_output_index_matches_signal_index(self):
         sig = self._make_signal_panel()
