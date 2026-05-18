@@ -184,6 +184,22 @@ class TestBuildPortfolios:
         assert first_date_weights.isna().all(), \
             "Weights at first signal date should be NaN (signals not yet shifted)"
 
+    def test_conservation_canary(self):
+        """sum(long) ≈ -sum(short); sum(|weights|) = 2 * sum(long) for equal legs."""
+        sig = self._make_signal_panel(n_dates=60, n_tickers=20)
+        result = build_portfolios(sig, mode="long_short_quintile")
+        w = result["weight"].unstack("ticker").fillna(0.0)
+        for dt, row in w.iterrows():
+            long_sum  = row[row > 0].sum()
+            short_sum = row[row < 0].sum()
+            gross     = row.abs().sum()
+            if long_sum == 0:
+                continue
+            assert abs(long_sum + short_sum) < 1e-9, \
+                f"Long/short imbalance at {dt}: long={long_sum:.4f} short={short_sum:.4f}"
+            assert abs(gross - 2 * long_sum) < 1e-9, \
+                f"Gross != 2*long at {dt}: gross={gross:.4f} 2*long={2*long_sum:.4f}"
+
 
 class TestApplyCosts:
     def _make_constant_weights(self, n_dates=30, n_tickers=5):
