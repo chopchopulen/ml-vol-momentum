@@ -81,4 +81,14 @@ class TestGBMForecaster:
         X = panel.drop(columns=["target_log_rv"])
         shap_vals = m.shap_values(X)
         assert shap_vals is not None
+        assert shap_vals.ndim == 2
         assert shap_vals.shape[0] == len(X.dropna(subset=FEATURE_COLS))
+
+    def test_fit_stores_mse_resid(self):
+        """mse_resid_ must be a positive finite float after fit — used for Jensen correction."""
+        panel = _make_synthetic_panel()
+        m = GBMForecaster()
+        m.fit(panel)
+        assert isinstance(m.mse_resid_, float)
+        assert np.isfinite(m.mse_resid_)
+        assert m.mse_resid_ > 0

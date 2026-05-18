@@ -91,4 +91,5 @@ class GBMForecaster(Forecaster):
         import shap
         X, _ = self._prepare_X(panel)
         explainer = shap.TreeExplainer(self.booster_)
-        return explainer.shap_values(X)
+        vals = explainer.shap_values(X)
+        return np.array(vals) if not isinstance(vals, np.ndarray) else vals
