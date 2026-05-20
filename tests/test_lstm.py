@@ -160,3 +160,13 @@ class TestLSTMEnsemble:
         ens.fit(train)
         out = ens.predict(test)
         assert (out["forecast_rv"].dropna() > 0).all()
+
+    def test_predict_index_is_date_ticker(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test  = panel.iloc[160:]
+        ens = LSTMEnsemble(seeds=[0, 1])
+        ens.fit(train)
+        out = ens.predict(test)
+        assert out.index.names == ["date", "ticker"]
+        assert out.index.nlevels == 2
