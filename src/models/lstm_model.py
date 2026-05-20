@@ -226,3 +226,39 @@ class LSTMForecaster(Forecaster):
             index=out_idx,
         )
         return out.sort_index()
+
+
+class LSTMEnsemble(Forecaster):
+    """5-seed LSTM ensemble. fit() trains all seeds; predict() averages log-RV predictions."""
+    name = "lstm_ensemble"
+
+    def __init__(self, seeds: list[int] | None = None):
+        self.seeds: list[int] = seeds if seeds is not None else _LCFG["seeds"]
+        self.members_: list[LSTMForecaster] = []
+        self.per_seed_forecasts_: list[pd.DataFrame] = []
+
+    def fit(self, train: pd.DataFrame) -> None:
+        self.members_ = []
+        for seed in self.seeds:
+            m = LSTMForecaster()
+            m.fit(train, seed=seed)
+            self.members_.append(m)
+
+    def predict(self, history: pd.DataFrame) -> pd.DataFrame:
+        self.per_seed_forecasts_ = []
+        log_rv_frames = []
+        for m in self.members_:
+            fc = m.predict(history)
+            self.per_seed_forecasts_.append(fc)
+            log_rv_frames.append(fc["forecast_log_rv"])
+        if not log_rv_frames:
+            return pd.DataFrame(columns=["forecast_log_rv", "forecast_rv"])
+        # Average in log space; Jensen correction uses mean mse_resid_ across seeds
+        mean_log_rv = pd.concat(log_rv_frames, axis=1).mean(axis=1)
+        mean_mse = float(np.mean([m.mse_resid_ for m in self.members_]))
+        rv_hat = np.exp(mean_log_rv + mean_mse / 2)
+        out = pd.DataFrame(
+            {"forecast_log_rv": mean_log_rv, "forecast_rv": rv_hat},
+        )
+        out.index.names = ["date", "ticker"]
+        return out.sort_index()

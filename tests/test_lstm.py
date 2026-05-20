@@ -113,3 +113,50 @@ class TestLSTMForecaster:
         panel = _make_synthetic_panel(n_dates=200)
         with pytest.raises(RuntimeError):
             m.predict(panel)
+
+
+from src.models.lstm_model import LSTMEnsemble
+
+
+class TestLSTMEnsemble:
+    def test_implements_forecaster_protocol(self):
+        from src.models.forecaster import Forecaster
+        m = LSTMEnsemble(seeds=[0, 1])
+        assert isinstance(m, Forecaster)
+
+    def test_fit_trains_all_seeds(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        m = LSTMEnsemble(seeds=[0, 1, 2])
+        m.fit(panel)
+        assert len(m.members_) == 3
+
+    def test_predict_returns_correct_columns(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test  = panel.iloc[160:]
+        ens = LSTMEnsemble(seeds=[0, 1, 2])
+        ens.fit(train)
+        out_ens = ens.predict(test)
+        assert "forecast_log_rv" in out_ens.columns
+        assert "forecast_rv" in out_ens.columns
+        assert len(out_ens) > 0
+
+    def test_seed_dispersion_stored(self):
+        """After predict(), per_seed_forecasts_ should be populated."""
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test  = panel.iloc[160:]
+        ens = LSTMEnsemble(seeds=[0, 1])
+        ens.fit(train)
+        ens.predict(test)
+        assert hasattr(ens, "per_seed_forecasts_")
+        assert len(ens.per_seed_forecasts_) == 2
+
+    def test_forecast_rv_positive(self):
+        panel = _make_synthetic_panel(n_dates=200)
+        train = panel.iloc[:160]
+        test  = panel.iloc[160:]
+        ens = LSTMEnsemble(seeds=[0, 1])
+        ens.fit(train)
+        out = ens.predict(test)
+        assert (out["forecast_rv"].dropna() > 0).all()
