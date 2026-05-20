@@ -157,10 +157,11 @@ class GARCH11Model:
         series = [
             train.xs(t, level="ticker")["return"] for t in tickers
         ]
-        results = Parallel(n_jobs=self.n_jobs)(
-            delayed(_fit_one_garch)(t, r, self.dist, self.rescale)
+        # Plain loop — joblib/loky has semaphore leaks on Python 3.14
+        results = [
+            _fit_one_garch(t, r, self.dist, self.rescale)
             for t, r in zip(tickers, series)
-        )
+        ]
         for tkr, res, conv in results:
             self.convergence_log_[tkr] = conv
             if res is not None:
