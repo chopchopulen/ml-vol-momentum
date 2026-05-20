@@ -83,13 +83,13 @@ for model_name, (model, mpanel) in models.items():
     w_scaled = build_portfolios(None, weights=w_scaled_raw, mode="vol_targeted_gross")
     net_scaled = apply_costs(w_scaled, returns_panel, cost_bps=10.0).dropna()
     all_strategies[f"{model_name}_scaled"] = net_scaled
-    net_scaled.to_parquet(f"results/strategies/{model_name}_scaled.parquet")
+    net_scaled.to_frame("net_return").to_parquet(f"results/strategies/{model_name}_scaled.parquet")
 
 # Unscaled baseline
 w_unscaled = build_portfolios(signal, mode="long_short_quintile")
 net_unscaled = apply_costs(w_unscaled, returns_panel, cost_bps=10.0).dropna()
 all_strategies["unscaled_momentum"] = net_unscaled
-net_unscaled.to_parquet("results/strategies/unscaled_momentum.parquet")
+net_unscaled.to_frame("net_return").to_parquet("results/strategies/unscaled_momentum.parquet")
 
 # Master results table
 print("\n\n=== MASTER RESULTS TABLE ===")

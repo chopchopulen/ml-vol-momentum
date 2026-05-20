@@ -152,3 +152,15 @@ Updated as the project progresses.
 **Why:** The R² improvement is larger than the IC improvement. R² is driven by absolute forecast accuracy, which benefits from GBM's ability to weight VIX and cross-sectional features differently in different regimes. IC is rank-based and more robust to level miscalibration — so GBM's cross-sectional ranking advantage is smaller (+2%) than its absolute accuracy advantage (~+13% in R²).
 
 **Interview angle:** "IC and R² can diverge significantly. GBM's R² gain is larger than its IC gain because R² is sensitive to level accuracy in high-vol periods, where GBM's regime-conditioning helps the most."
+
+---
+
+### 14. LSTM seed-to-seed IC std = 0.0022 — near-zero variance across seeds
+
+**What I found:** 5-seed LSTM on 2003-2010 (40 tickers): IC = 0.721, 0.721, 0.726, 0.721, 0.723 across seeds 0-4. Std = 0.0022. Pre-registered gate was < 0.10; actual is 22× better.
+
+**Why so stable:** The 2003-2010 training windows are large (3-10 years of daily data × 40 tickers × ~60-day sequences = tens of thousands of training samples). With this much data, the LSTM converges to essentially the same loss basin regardless of weight initialisation. Seed variance matters most with small datasets; at N > 50k sequences the gradient landscape is well-behaved.
+
+**Also notable:** LSTM mean IC = 0.723 on 2003-2010, vs GBM IC = ~0.71-0.75 in the same years. The two models are very close cross-sectionally on the 40-ticker 2003-2010 window — consistent with pre-registered prediction #3 ("LSTM will not beat GBM").
+
+**Interview angle:** "For seed sensitivity analysis, what matters is not just the std but whether it's large relative to the model-vs-baseline IC gap. Std=0.002 vs IC gap of ~0.02 over HAR-RV means LSTM ensemble variance is essentially negligible for the headline result."
