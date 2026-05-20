@@ -73,8 +73,12 @@ class TestGBMForecaster:
         out = m.predict(test_no_target)
         assert len(out) > 0, "predict() should work even without target column"
 
+    @pytest.mark.shap
     def test_shap_values_returns_array(self):
-        """shap_values() returns a 2D array matching the number of input rows."""
+        """shap_values() returns a 2D array matching the number of input rows.
+        Marked shap: run in isolation (lgb+shap+torch in same process causes segfault on py3.14).
+        Run with: pytest tests/test_gbm.py::TestGBMForecaster::test_shap_values_returns_array
+        """
         panel = _make_synthetic_panel(n_dates=100, n_tickers=5)
         m = GBMForecaster()
         m.fit(panel)

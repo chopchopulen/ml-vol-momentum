@@ -58,6 +58,7 @@ class LSTMForecaster(Forecaster):
         all_X, all_y, all_idx = [], [], []
         for tkr in tickers:
             sub = panel.xs(tkr, level="ticker").sort_index()
+            sub = sub[~sub.index.duplicated(keep="first")]
             feats = sub[feat_cols].values.astype(np.float32)  # (T, n_feat)
             if include_target and "target_log_rv" in sub.columns:
                 tgt = sub["target_log_rv"].values.astype(np.float32)
@@ -73,6 +74,9 @@ class LSTMForecaster(Forecaster):
                 all_X.append(seq)
                 all_idx.append((sub.index[t], tkr))
                 if tgt is not None:
+                    # seq uses rows t-seq_len..t-1; tgt[t] is the FORWARD realized variance
+                    # computed from returns at t+1..t+21 (already forward-looking in targets.py).
+                    # No leakage: the last feature row is t-1, not t.
                     all_y.append(tgt[t])
         if not all_X:
             return np.empty((0, _SEQ_LEN, len(feat_cols)), dtype=np.float32), None, []
@@ -142,6 +146,7 @@ class LSTMForecaster(Forecaster):
             for xb, yb in tr_dl:
                 optimizer.zero_grad()
                 loss_fn(self.model_(xb), yb).backward()
+                torch.nn.utils.clip_grad_norm_(self.model_.parameters(), max_norm=1.0)
                 optimizer.step()
             self.model_.eval()
             with torch.no_grad():
@@ -178,6 +183,10 @@ class LSTMForecaster(Forecaster):
         if self._train_tail_ is not None and len(self._train_tail_) > 0:
             tail_feats = self._train_tail_.reindex(columns=feat_cols)
             hist_feats = history.reindex(columns=feat_cols)
+            # Only keep tail rows for tickers present in history (avoid 80x overhead on partial calls)
+            history_tickers = set(history.index.get_level_values("ticker").unique())
+            tail_mask = tail_feats.index.get_level_values("ticker").isin(history_tickers)
+            tail_feats = tail_feats[tail_mask]
             combined_feats = pd.concat([tail_feats, hist_feats]).sort_index()
             # Keep only the feature columns for sequence building
             norm_combined = combined_feats.copy()
