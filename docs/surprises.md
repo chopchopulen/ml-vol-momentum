@@ -131,6 +131,24 @@ Updated as the project progresses.
 
 ---
 
-## Phase 3 (to be filled in)
+## Phase 3
 
-*Placeholder for GBM/LSTM surprises.*
+### 12. GBM beats HAR-RV most in high-volatility years
+
+**What I found:** GBM pooled IC = 0.6935 vs HAR-RV = 0.6727 (+0.0208). The advantage is not uniformly distributed: GBM beats HAR-RV by +0.090 in 2007, +0.096 in 2008, +0.046 in 2018, +0.050 in 2024 — all high-VIX or regime-transition years. In calm low-vol years (2003-2005, 2009-2014) the two models are within ±0.025.
+
+**Why this makes sense:** HAR-RV is a linear model using only the three trailing RV components. GBM can learn non-linear interactions — specifically, the interaction between the level of VIX and the persistence of individual-stock vol. In high-vol regimes, VIX becomes a stronger cross-sectional discriminator (stocks react differentially to market stress depending on beta, sector, and idiosyncratic risk). HAR-RV misses this because it doesn't see VIX per-stock interactions; GBM captures it via tree splits on (rv_m, vix).
+
+**Interview angle:** "GBM's edge over HAR-RV is regime-dependent. In calm markets, a 3-feature linear model is near-optimal. In high-vol regimes, the non-linear VIX × RV interaction matters — exactly what tree ensembles learn but linear models can't represent."
+
+**Pre-registered prediction check:** Prediction #2 said "GBM will tie or modestly beat HAR-RV on cross-sectional IC (+0.02 to +0.05)." Actual: +0.0208. ✓ Confirmed.
+
+---
+
+### 13. GBM OOS R² = 0.537, well above HAR-RV's 0.473
+
+**What I found:** GBM pooled OOS R² on log-RV is 0.537 vs HAR-RV's 0.473 — a meaningful gap (Phase 1 HAR-RV R² on the same 22-year OOS was 0.328; the higher number here reflects the updated 22-year window vs. the 2003-2024 OOS vs. shorter windows in Phase 1).
+
+**Why:** The R² improvement is larger than the IC improvement. R² is driven by absolute forecast accuracy, which benefits from GBM's ability to weight VIX and cross-sectional features differently in different regimes. IC is rank-based and more robust to level miscalibration — so GBM's cross-sectional ranking advantage is smaller (+2%) than its absolute accuracy advantage (~+13% in R²).
+
+**Interview angle:** "IC and R² can diverge significantly. GBM's R² gain is larger than its IC gain because R² is sensitive to level accuracy in high-vol periods, where GBM's regime-conditioning helps the most."
