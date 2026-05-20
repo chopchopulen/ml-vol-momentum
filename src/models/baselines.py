@@ -112,14 +112,26 @@ class HARRV:
 
 
 def _fit_one_garch(tkr: str, r: pd.Series, dist: str,
-                   rescale: bool) -> tuple[str, object, bool]:
+                   rescale: bool, timeout: int = 30) -> tuple[str, object, bool]:
+    import signal as _signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError(f"GARCH fit timed out after {timeout}s")
+
     try:
         data = r * 100 if rescale else r
         am = arch_model(data.dropna(), vol="Garch", p=1, q=1,
                         dist=dist, rescale=False)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            res = am.fit(disp="off", show_warning=False)
+            # Set per-ticker timeout so a non-converging fit can't hang indefinitely
+            old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
+            _signal.alarm(timeout)
+            try:
+                res = am.fit(disp="off", show_warning=False)
+            finally:
+                _signal.alarm(0)
+                _signal.signal(_signal.SIGALRM, old_handler)
         converged = res.convergence_flag == 0
         return tkr, res, converged
     except Exception as e:
@@ -140,6 +152,8 @@ class GARCH11Model:
 
     def fit(self, train: pd.DataFrame) -> None:
         tickers = train.index.get_level_values("ticker").unique().tolist()
+        train_end = train.index.get_level_values("date").max().year
+        print(f"    GARCH fitting {len(tickers)} tickers (window ending {train_end})...", flush=True)
         series = [
             train.xs(t, level="ticker")["return"] for t in tickers
         ]
