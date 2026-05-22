@@ -169,20 +169,33 @@ class GARCH11Model:
 
     def predict(self, history: pd.DataFrame) -> pd.DataFrame:
         rows = []
+        # All dates present in history — used to broadcast the point forecast
+        all_dates = history.index.get_level_values("date").unique().sort_values()
         for tkr, res in self.fitted_.items():
             try:
-                # No new data is passed: arch's forecast() uses the last
-                # in-sample conditional variance from the fitted model, which
-                # is the correct 1-step-ahead prediction in a walk-forward setup.
+                # arch's forecast() returns a single row indexed at the last
+                # in-sample date. We broadcast that constant forecast to every
+                # date in history so run_walk_forward's test-window filter works.
                 fcast = res.forecast(horizon=21, reindex=False)
-                # fcast.variance has shape (n_obs, 21); sum across horizon
                 cond_var_sum = fcast.variance.sum(axis=1)
                 if self.rescale:
                     cond_var_sum = cond_var_sum / (100 ** 2)
-                # Guard against degenerate GARCH output (near-zero variance).
                 cond_var_sum = cond_var_sum[cond_var_sum > 0]
-                df_out = pd.DataFrame({"forecast_rv": cond_var_sum,
-                                       "forecast_log_rv": np.log(cond_var_sum)})
+                if cond_var_sum.empty:
+                    continue
+                scalar_rv = float(cond_var_sum.iloc[0])
+                # Determine dates for this ticker present in history
+                tkr_dates = (
+                    history.loc[history.index.get_level_values("ticker") == tkr]
+                    .index.get_level_values("date").unique().sort_values()
+                )
+                if tkr_dates.empty:
+                    tkr_dates = all_dates
+                rv_series = pd.Series(scalar_rv, index=tkr_dates)
+                df_out = pd.DataFrame({
+                    "forecast_rv": rv_series,
+                    "forecast_log_rv": np.log(rv_series),
+                })
                 df_out.index = pd.MultiIndex.from_arrays(
                     [df_out.index, [tkr] * len(df_out)], names=["date", "ticker"])
                 rows.append(df_out)

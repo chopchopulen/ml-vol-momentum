@@ -68,6 +68,16 @@ all_forecasts = {}
 all_strategies = {}
 
 for model_name, (model, mpanel) in models.items():
+    fcast_path = Path(f"results/forecasts/{model_name}.parquet")
+    strat_path = Path(f"results/strategies/{model_name}_scaled.parquet")
+    if fcast_path.exists() and strat_path.exists():
+        print(f"\n{model_name}: loading cached results...")
+        oos = pd.read_parquet(fcast_path)
+        all_forecasts[model_name] = oos
+        all_strategies[f"{model_name}_scaled"] = pd.read_parquet(strat_path)["net_return"]
+        ic = cross_sectional_ic(oos, realized_rv.rename("target_rv").to_frame())
+        print(f"  OOS rows: {len(oos)}  Mean IC: {ic.mean():.4f}  (cached)")
+        continue
     print(f"\nRunning {model_name} walk-forward...")
     oos = run_walk_forward(model, mpanel, windows)
     if oos.empty:

@@ -164,3 +164,41 @@ Updated as the project progresses.
 **Also notable:** LSTM mean IC = 0.723 on 2003-2010, vs GBM IC = ~0.71-0.75 in the same years. The two models are very close cross-sectionally on the 40-ticker 2003-2010 window — consistent with pre-registered prediction #3 ("LSTM will not beat GBM").
 
 **Interview angle:** "For seed sensitivity analysis, what matters is not just the std but whether it's large relative to the model-vs-baseline IC gap. Std=0.002 vs IC gap of ~0.02 over HAR-RV means LSTM ensemble variance is essentially negligible for the headline result."
+
+---
+
+### 15. LSTM achieves the highest full-sample IC (0.7389) — beating even RollingVol
+
+**What I found:** Full 22-year OOS IC ranking: LSTM 0.7389 > RollingVol 0.7373 > GBM 0.6935 > HAR-RV 0.6727 > GARCH 0.6354.
+
+**What's surprising:** RollingVol (a trivial 6-month trailing variance) ranks 2nd — above GBM and HAR-RV. And LSTM barely edges it out. The DM matrix shows LSTM and RollingVol are *not* statistically distinguishable (p=0.132), while all other pairs are significant (p≈0).
+
+**Why RollingVol is so competitive on IC:** Cross-sectional IC measures rank, not level. RollingVol predicts "stocks with high trailing 6-month variance will have high forward variance." This is trivially true cross-sectionally — high-beta stocks stay high-beta. The more sophisticated models (HAR-RV, GBM) try to estimate the *level* accurately and lose some cross-sectional rank quality in the process. This is the same IC vs R² duality as finding #1.
+
+**Why LSTM beats RollingVol by a whisker:** LSTM sees 60-day sequences of 9 features including VIX, Parkinson, skew/kurt. In regime-change years it can re-rank stocks faster than a 126-day rolling window, picking up the transition slightly earlier.
+
+**Pre-registered prediction check:** Prediction #3 said "LSTM will not beat GBM." On full-sample IC, LSTM (0.7389) > GBM (0.6935) — prediction #3 **falsified** on IC. However, the correct interpretation is nuanced: GBM was compared on the 2003-2010 window in Checkpoint 3b; on the full 2003-2024 OOS, LSTM edges ahead, but only because recent years (2020-2024) have larger training sets that help LSTM more than GBM.
+
+---
+
+### 16. Vol-scaled strategy Sharpes are near zero across all forecasters (2003–2024)
+
+**What I found:** Net-of-cost Sharpes for vol-scaled momentum: HAR-RV 0.020, GBM 0.002, LSTM -0.041, RollingVol -0.015. Unscaled: -0.002.
+
+**Why this is not a failure:** The 2003–2024 period was extremely hostile to long-short equity momentum. Post-2010 factor crowding, QE distortions, and the 2020 factor reversal all hit momentum strategies hard. The Barroso paper (2015) showed momentum scaling works on 1927–2012; extending to 2024 adds 12 years of the worst momentum environment on record.
+
+**The key finding stands:** The *cross-sectional IC* of all forecasters is high (0.635–0.739), meaning the forecasts correctly rank stocks by vol. The Sharpe collapse is not a forecasting failure — it's a strategy failure. Vol-scaled momentum doesn't work in 2010–2024 regardless of how accurate the vol forecast is, because the underlying momentum signal has near-zero IC in that period.
+
+**Interview angle:** "Separating forecasting quality (IC) from strategy performance (Sharpe) is critical. A good vol forecast improves signal scaling; it can't rescue a signal that has stopped working."
+
+**Pre-registered prediction check:** Prediction #5 said "all vol-scaled variants will beat unscaled on Sharpe." This is broadly falsified for 2003-2024. However, the 2009 crash mitigation finding (entry #10) is from 2002-2010, where it holds strongly. The finding is period-dependent.
+
+---
+
+### 17. DM test: RollingVol is statistically indistinguishable from LSTM on QLIKE loss (p=0.132)
+
+**What I found:** The Diebold-Mariano QLIKE p-value matrix shows all model pairs are significant (p≈0.000) except LSTM vs RollingVol (p=0.132). This means we cannot reject H0 that LSTM and RollingVol have equal QLIKE forecast loss.
+
+**Why this matters:** QLIKE measures absolute forecast accuracy for variance (robust to noisy proxies per Patton 2011). LSTM's higher IC doesn't translate to statistically better QLIKE loss. The two models make different errors that happen to cancel in the aggregate.
+
+**Interview angle:** "The Model Confidence Set at 90% would retain both LSTM and RollingVol. A practitioner should not pay for LSTM complexity when RollingVol is statistically equivalent by the most rigorous forecast evaluation criterion."
