@@ -35,9 +35,17 @@ def test_assign_regimes_returns_series():
 def test_assign_regimes_covers_oos_dates():
     from src.interp.regime_analysis import assign_regimes
     vix = _make_vix()
-    windows = generate_windows(pd.Timestamp("2000-01-01"), pd.Timestamp("2010-12-31"), first_test_year=2003)
+    windows = generate_windows(
+        pd.Timestamp("2000-01-01"), pd.Timestamp("2010-12-31"), first_test_year=2003
+    )
     regimes = assign_regimes(vix, windows)
-    assert len(regimes) > 0
+    # Every business day in a test window that has a VIX observation must be in regimes
+    for w in windows:
+        oos_vix_dates = vix.loc[
+            (vix.index >= w.test_start) & (vix.index <= w.test_end)
+        ].index
+        for d in oos_vix_dates:
+            assert d in regimes.index, f"OOS date {d} missing from regimes"
 
 
 def test_regime_ic_returns_dataframe():
@@ -54,7 +62,45 @@ def test_regime_ic_returns_dataframe():
 
 def test_no_lookahead_in_thresholds():
     from src.interp.regime_analysis import assign_regimes
-    vix = _make_vix()
-    windows = generate_windows(pd.Timestamp("2000-01-01"), pd.Timestamp("2010-12-31"), first_test_year=2003)
-    regimes = assign_regimes(vix, windows)
-    assert regimes is not None
+    windows = generate_windows(
+        pd.Timestamp("2000-01-01"), pd.Timestamp("2005-12-31"), first_test_year=2003
+    )
+    # Two VIX series: identical training data, identical test-window values for a
+    # shared subset, but the extreme series also has additional extreme test values.
+    # The shared test dates must receive identical regime labels in both series,
+    # because thresholds derive solely from training data.
+    dates = pd.bdate_range("2000-01-01", "2005-12-31")
+    rng = np.random.default_rng(42)
+    train_values = rng.uniform(10, 40, len(dates))
+    base = pd.Series(train_values, index=dates, name="vix")
+
+    # Identify test window dates (from first test year onward)
+    test_dates = dates[dates >= pd.Timestamp("2003-02-12")]
+    # Pick a subset of test dates that will be checked: set them to a fixed mid value
+    # in both series so we can assert identical labels.
+    shared_test_value = 20.0  # will land somewhere in low/mid/high based on training
+
+    vix_normal = base.copy()
+    vix_extreme = base.copy()
+    # Both series: shared test dates get the same fixed value
+    vix_normal.loc[test_dates] = shared_test_value
+    vix_extreme.loc[test_dates] = shared_test_value
+    # Extreme series: overwrite the last half of test dates with extreme values
+    # This should NOT affect the labels of the first-half dates if there's no look-ahead
+    split = len(test_dates) // 2
+    first_half = test_dates[:split]
+    second_half = test_dates[split:]
+    vix_extreme.loc[second_half] = 999.0  # extreme in test window only
+
+    regimes_normal = assign_regimes(vix_normal, windows)
+    regimes_extreme = assign_regimes(vix_extreme, windows)
+
+    # The first-half test dates have identical values in both series and must get
+    # identical regime labels — proving extreme second-half values didn't shift thresholds
+    for d in first_half:
+        if d in regimes_normal.index and d in regimes_extreme.index:
+            assert regimes_normal[d] == regimes_extreme[d], (
+                f"Look-ahead detected: date {d} got different regime labels "
+                f"({regimes_normal[d]} vs {regimes_extreme[d]}) despite identical "
+                "training data and identical test value at that date"
+            )
