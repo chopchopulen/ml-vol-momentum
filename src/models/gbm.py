@@ -89,9 +89,12 @@ class GBMForecaster(Forecaster):
         return out.sort_index()
 
     def shap_values(self, panel: pd.DataFrame) -> np.ndarray:
-        """Return SHAP values for the given panel rows (drops NaN rows first)."""
-        import shap
+        """Return SHAP values for the given panel rows (drops NaN rows first).
+
+        Uses LightGBM's built-in pred_contrib which returns shape (n_rows, n_features+1)
+        where the last column is the bias term — we drop it to get (n_rows, n_features).
+        """
         X, _ = self._prepare_X(panel)
-        explainer = shap.TreeExplainer(self.booster_)
-        vals = explainer.shap_values(X)
-        return np.array(vals) if not isinstance(vals, np.ndarray) else vals
+        contribs = self.booster_.predict(X, pred_contrib=True)
+        # Drop the bias column (last column)
+        return contribs[:, :-1]
