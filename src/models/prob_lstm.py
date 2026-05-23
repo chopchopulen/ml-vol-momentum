@@ -50,7 +50,8 @@ class _PointLSTMNet(nn.Module):
 
 
 def _gaussian_nll(mu: torch.Tensor, log_var: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Negative log-likelihood of N(mu, exp(log_var))."""
+    """Negative log-likelihood of N(mu, exp(log_var)). log_var clamped for stability."""
+    log_var = log_var.clamp(-10, 10)
     precision = torch.exp(-log_var)
     return 0.5 * (log_var + precision * (target - mu) ** 2).mean()
 
@@ -123,8 +124,13 @@ class ProbLSTMForecaster(Forecaster):
         self._tgt_mean = float(np.mean(tgt_vals))
         self._tgt_std = float(np.std(tgt_vals)) + 1e-8
 
-        # Store tail for predict() context
-        self._train_tail_ = train.copy()
+        # Store only the last _SEQ_LEN rows per ticker (same as LSTMForecaster)
+        feat_cols_only = [c for c in FEATURE_COLS if c in train.columns]
+        self._train_tail_ = (
+            train[feat_cols_only]
+            .groupby(level="ticker", group_keys=False)
+            .apply(lambda g: g.sort_index().iloc[-_SEQ_LEN:])
+        )
 
         # Normalise
         norm = train.copy()
@@ -133,6 +139,7 @@ class ProbLSTMForecaster(Forecaster):
 
         X, y, _ = self._build_sequences(norm, include_target=True)
         if len(X) == 0:
+            self.mse_resid_ = 1.0
             return
 
         # Chronological val split
@@ -257,6 +264,7 @@ class ProbLSTMForecaster(Forecaster):
             with torch.no_grad():
                 for _ in range(self.n_mc_samples):
                     samples.append(self.model_(X_t).numpy())
+            self.model_.eval()  # restore eval state
             samples = np.stack(samples, axis=0)  # (n_mc, n_seq)
             mu_z = samples.mean(axis=0)
             sigma_z = samples.std(axis=0)
