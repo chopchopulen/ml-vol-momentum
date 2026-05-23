@@ -17,19 +17,16 @@ test:
 	$(VENV)/bin/pytest tests/ -v
 
 data:
-	$(PYTHON) -m src.data.universe
-	$(PYTHON) -m src.data.loaders
+	$(PYTHON) scripts/build_data.py
 
 baselines:
-	$(PYTHON) -m src.models.baselines
+	$(PYTHON) scripts/run_baselines.py
 
 ml:
-	$(PYTHON) -m src.models.gbm
-	$(PYTHON) -m src.models.lstm_model
+	$(PYTHON) scripts/run_ml_models.py
 
 analysis:
-	$(PYTHON) -m src.eval.comparison
-	$(PYTHON) -m src.interp.shap_analysis
-	$(PYTHON) -m src.interp.regime_analysis
+	$(PYTHON) scripts/compare_all_models.py
+	$(PYTHON) scripts/run_phase4.py
 
 all: data baselines ml analysis
