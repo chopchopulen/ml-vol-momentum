@@ -66,6 +66,28 @@ models:
     val_fraction: 0.1
     seeds: [0, 1, 2, 3, 4]
 
+  prob_lstm:
+    variant: "gaussian_head"       # or "mc_dropout"
+    n_mc_samples: 50               # for mc_dropout variant only
+    # inherits sequence_length, hidden_size, dropout, optimizer, lr, batch_size,
+    # max_epochs, patience, val_fraction, seeds from lstm block
+
+  transformer:
+    d_model: 32
+    n_heads: 4
+    n_layers: 2
+    dropout: 0.1
+
+  mlp:
+    hidden_sizes: [256, 128, 64]
+    dropout: 0.25
+
+  tcn:
+    n_channels: 32
+    kernel_size: 3
+    n_layers: 4
+    dropout: 0.2
+
 strategy:
   momentum:
     lookback: 252
