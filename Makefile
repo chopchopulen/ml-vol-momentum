@@ -14,7 +14,12 @@ venv:
 	$(PIP) install -e .
 
 test:
-	$(VENV)/bin/pytest tests/ -v
+	# Run non-ML tests first, then ML model tests in separate invocations.
+	# LightGBM (OpenMP) and PyTorch both use fork-unsafe C extensions that
+	# cause SIGABRT when mixed in a single pytest process on macOS.
+	$(VENV)/bin/pytest tests/ --ignore=tests/test_gbm.py --ignore=tests/test_lstm.py -v
+	$(VENV)/bin/pytest tests/test_gbm.py -v
+	$(VENV)/bin/pytest tests/test_lstm.py -v
 
 data:
 	$(PYTHON) scripts/build_data.py
