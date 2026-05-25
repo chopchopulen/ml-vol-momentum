@@ -217,6 +217,49 @@ Every modelling choice has a documented justification. Key decisions:
 
 ---
 
+## Extension 1: Probabilistic LSTM
+
+**Hypothesis:** The IC ≠ Sharpe disconnect arises because `weight = target_vol / sigma_hat` is level-sensitive, not just rank-sensitive. A point forecast can rank stocks correctly but still assign miscalibrated weights. A distributional forecast outputting `(μ, σ)` — plus an uncertainty penalty that downweights high-σ positions — should reduce sizing errors.
+
+**Implementation:** Gaussian output head on the LSTM backbone predicts `(μ, log_σ²)` jointly, trained with negative log-likelihood. 5-seed ensemble combines uncertainties via law of total variance: `σ_ensemble² = mean(σ_k²) + variance(μ_k)`. Uncertainty-weighted sizing: `weight_i = (target_vol / ann_vol_i) × (1 / norm_sigma_i) × z_score(signal_i)` where `norm_sigma_i = sigma_i / median(sigma)`.
+
+| Strategy | Mean XS-IC | Sharpe | Max DD |
+|---|---|---|---|
+| LSTM point forecast (baseline) | 0.739 | -0.041 | 73.7% |
+| Prob LSTM — plain vol-scale | 0.738 | -0.046 | 73.5% |
+| Prob LSTM — uncertainty-weighted | 0.738 | **-0.036** | 73.1% |
+
+**Finding:** Uncertainty weighting gave a marginal Sharpe improvement (+0.005 vs point LSTM, +0.010 vs plain prob-LSTM). The IC is unchanged — the distributional head does not improve cross-sectional rank ordering, only position sizing. The improvement is too small to be statistically significant. The fundamental problem (IC ≠ Sharpe) is not solved by uncertainty-aware sizing alone.
+
+---
+
+## Extension 2: Architecture Comparison
+
+**Question:** Does temporal structure help? Does the Transformer overfit on this small-feature dataset? Does TCN match LSTM with faster training?
+
+All architectures use identical setup: 9 features, seq_len=60, same walk-forward CV (22 windows, 42-day embargo). Fast-mode architectures (Transformer, MLP, TCN) use 2 seeds and 10 max epochs for tractability on CPU. LSTM uses the 5-seed full run for reference.
+
+| Architecture | Mean XS-IC | IC Std | Sharpe | Max DD | Windows |
+|---|---|---|---|---|---|
+| LSTM | 0.739 | 0.091 | -0.041 | 73.7% | 22 |
+| Transformer | 0.746 | 0.090 | -0.026 | 73.6% | 22 |
+| MLP | 0.723 | 0.096 | -0.048 | 75.3% | 22 |
+| TCN | **0.769** | 0.074 | **+0.238** | 36.7% | 10* |
+| Prob LSTM (plain) | 0.738 | 0.093 | -0.046 | 73.5% | 22 |
+| Prob LSTM (unc-weighted) | 0.738 | 0.093 | -0.036 | 73.1% | 22 |
+
+*TCN: 10/22 windows completed (2003–2012). Treat Sharpe with caution — partial sample may be favourable.
+
+**Key findings:**
+
+- **TCN shows the highest IC (0.769) and the only positive Sharpe (+0.238)** on its 10-window partial sample. Dilated causal convolutions with receptive field = 48 steps appear well-suited to this problem. The result needs full 22-window confirmation.
+- **Transformer slightly outperforms LSTM on IC (0.746 vs 0.739)** — attention captures longer-range dependencies better than a 1-layer LSTM. However it was ~4× slower on CPU, making it impractical without a GPU.
+- **MLP is the weakest (IC = 0.723)**, confirming that temporal structure helps vs a flat 540-dim feature vector. The 60-step ordering carries information.
+- **The IC ≠ Sharpe disconnect persists across all architectures.** MLP has lower IC than LSTM but nearly identical Sharpe. The forecast → strategy translation remains the binding constraint, not forecaster quality.
+- **Practical note:** Transformer and TCN require GPU for production-scale walk-forward. On CPU, a single 22-window run takes 2–3 days. LSTM and MLP are tractable on CPU (~3h each).
+
+---
+
 ## References
 
 - Andersen, Bollerslev, Diebold & Labys (2003) — log-normality of realised volatility
