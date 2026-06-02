@@ -217,6 +217,57 @@ Every modelling choice has a documented justification. Key decisions:
 
 ---
 
+## Extension 3: Cost Sensitivity, Calibration & Gradient Analysis
+
+### 3a. Transaction Cost Sensitivity
+
+All models have **positive gross Sharpe** — the vol-scaling signal has real value. Transaction costs are the binding constraint, not forecast quality.
+
+| Model | Gross (0bps) | 5bps | 10bps | 20bps |
+|---|---|---|---|---|
+| HAR-RV | 0.187 | 0.114 | 0.020 | -0.162 |
+| GBM | 0.165 | 0.090 | 0.002 | -0.163 |
+| LSTM | 0.117 | 0.044 | -0.041 | -0.198 |
+| Prob LSTM (unc) | 0.125 | 0.049 | -0.036 | -0.190 |
+| Transformer | 0.135 | 0.059 | -0.026 | -0.183 |
+| TCN (partial, 10 windows) | 0.421 | 0.338 | 0.238 | 0.050 |
+
+HAR-RV has the highest gross Sharpe among the 22-window models and the widest cost buffer — a simpler model produces a cleaner signal. TCN's gross Sharpe of 0.421 is the strongest result in the project, though the 10-window partial sample needs confirmation.
+
+![Cost sensitivity](results/figures/cost_sensitivity.png)
+
+### 3b. Probabilistic LSTM Calibration
+
+The Gaussian head is **well-calibrated out-of-sample**:
+- Standardised residuals: mean = 0.033, std = 1.056 (ideal: 0, 1)
+- ECE = 0.012 (0 = perfect; essentially no miscalibration)
+
+The predicted uncertainty intervals match empirical coverage across all quantile levels. The failure of uncertainty weighting to improve Sharpe is not a calibration problem — the intervals are correct. The issue is that cross-sectional σ variation is too small relative to the noise in the momentum signal itself.
+
+![Calibration](results/figures/calibration.png)
+
+### 3c. LSTM Input Gradient Sensitivity
+
+Backpropagating through the trained LSTM to compute mean |∂output/∂input| per feature:
+
+| Rank | Feature | Sensitivity | Interpretation |
+|---|---|---|---|
+| 1 | `pk` (Parkinson) | 0.0234 | Intraday H/L range dominates — more informative than close-to-close |
+| 2 | `rv_m` (21-day RV) | 0.0207 | Monthly component — HAR-RV's most important lag |
+| 3 | `rv_w` (5-day RV) | 0.0093 | Weekly component |
+| 4 | `rv_d` (1-day RV) | 0.0090 | Daily component |
+| 5 | `vix` | 0.0088 | Market-level regime signal |
+| 6 | `ret_21` | 0.0065 | Leverage effect control |
+| 7 | `kurt` | 0.0041 | |
+| 8 | `log_dv` | 0.0033 | |
+| 9 | `skew` | 0.0028 | |
+
+Consistent with the SHAP finding: `pk` (Parkinson range estimator) is the single most important feature, not `rv_m` as predicted. The LSTM rediscovered the same cross-sectional ranking signal as GBM. Temporal sensitivity peaks at recent lags (~last 10 days) — the LSTM effectively uses the 60-step window as context but weights recent observations most heavily.
+
+![Gradient sensitivity](results/figures/gradient_sensitivity.png)
+
+---
+
 ## Extension 1: Probabilistic LSTM
 
 **Hypothesis:** The IC ≠ Sharpe disconnect arises because `weight = target_vol / sigma_hat` is level-sensitive, not just rank-sensitive. A point forecast can rank stocks correctly but still assign miscalibrated weights. A distributional forecast outputting `(μ, σ)` — plus an uncertainty penalty that downweights high-σ positions — should reduce sizing errors.
