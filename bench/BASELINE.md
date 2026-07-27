@@ -210,9 +210,7 @@ Bit-identical. CPU-only PyTorch on this machine reproduces exactly at a fixed se
 `torch.use_deterministic_algorithms(True)` — determinism here is observed, not enforced,
 and is not guaranteed to survive a move to GPU.
 
-### 9b. Seed-to-seed distribution
-
-PENDING — sweep in progress. Protocol below is frozen regardless of outcome.
+### 9b. Seed-to-seed distribution — measured
 
 **Protocol (reduced, and the reduction is stated because it matters):** windows 0–2 (test
 years 2003–2005), **single-seed** TCN (not the 2-seed ensemble), `max_epochs=10`,
@@ -235,11 +233,54 @@ The harness verifies, before the sweep, that truncating `history` to
 `test_start − 150 days` yields **bit-identical** test-window predictions to passing the
 full history (max abs diff 0.000e+00), so the speedup does not change the arithmetic.
 
-| seed | mean IC (3 windows) |
+13 runs, 12 distinct seeds. Seed 42 was run twice and returned `0.7302946209` both times —
+the determinism check of §9a, repeated inside the sweep.
+
+| seed | mean IC (3 windows) | | seed | mean IC |
+|---|---|---|---|---|
+| 0 | 0.7321 | | 6 | 0.7307 |
+| 1 | 0.7289 | | 7 | 0.7281 |
+| 2 | 0.7296 | | 8 | 0.7254 |
+| 3 | 0.7330 | | 9 | 0.7293 |
+| 4 | 0.7357 | | 42 | 0.7303 |
+| 5 | **0.7100** ← min | | 43 | **0.7421** ← max |
+
+```
+n distinct seeds = 12
+mean   = 0.7296
+std    = 0.0075
+min    = 0.7100  (seed 5)
+max    = 0.7421  (seed 43)
+range  = 0.0321
+```
+
+**Verdict on the gate: PASS.** The user's threshold was "if IC 0.769 has a seed-to-seed std
+of 0.05+, it is one draw, not a result." Measured σ = **0.0075**, well inside that. And
+because this protocol averages over 3 windows rather than 10, the true 10-window σ is
+*smaller* still. The headline is not a lucky seed.
+
+**But the number that matters is σ relative to the differences the project asserts, and
+there it fails badly:**
+
+| quantity | magnitude |
 |---|---|
-| _pending_ | |
+| seed σ | 0.0075 |
+| seed range across 12 seeds | **0.0321** |
+| TCN − rolling_vol (the central comparison, §6) | **−0.0064** |
+| TCN − transformer_fast on TCN's rows (§3) | −0.0024 |
+| full architecture spread, MLP → TCN (`extension2_summary.md`) | 0.0465 |
 
-**mean / std / min / max: PENDING**
+**The gap between the TCN and the zero-parameter baseline is smaller than one standard
+deviation of seed noise, and the entire architecture spread the Extension-2 write-up
+interprets at length is smaller than the observed seed range.** Re-running the TCN with seed
+43 instead of seed 5 moves its IC by 0.032 — two-thirds of the whole spread between the best
+and worst architecture.
 
-Until this table is filled, `IC = 0.769` remains a single draw from an unmeasured
-distribution and must not be compared to any other model's number.
+Selection component: under a null where architectures differ only by seed noise,
+E[max of 4] = +0.0077, E[max of 6] = +0.0095, E[max of 10] = +0.0115. So seed cherry-picking
+alone accounts for roughly 0.01 of the 0.046 spread — real, but not the main driver. The main
+drivers are the sample mismatch (§3, §4) and shared persistence (§5).
+
+**Reporting rule this establishes:** no IC difference below ~0.015 in this project is
+interpretable without a per-architecture seed distribution, and none of the six architectures
+has one.
