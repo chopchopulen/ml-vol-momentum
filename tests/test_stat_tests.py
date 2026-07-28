@@ -1,8 +1,50 @@
 import numpy as np
 import pandas as pd
 import pytest
-from src.eval.tests import (diebold_mariano, mincer_zarnowitz,
-                             cross_sectional_ic, sharpe_diff_bootstrap)
+from src.eval.tests import (diebold_mariano, diebold_mariano_qlike, _qlike_loss,
+                             mincer_zarnowitz, cross_sectional_ic,
+                             sharpe_diff_bootstrap)
+
+
+class TestQlikeRejectsLogVariances:
+    """Regression guard for the audit's S0-2.
+
+    QLIKE is defined on variances. The old implementation clipped both
+    arguments to 1e-12, so log-variances (negative almost everywhere) both
+    collapsed to the same constant and the loss became identically zero —
+    silently producing p-values that tested nothing.
+    """
+
+    def test_negative_input_raises(self):
+        rng = np.random.default_rng(0)
+        log_rv = np.log(rng.uniform(1e-5, 1e-3, 200))   # all negative
+        with pytest.raises(ValueError, match="strictly positive variances"):
+            _qlike_loss(log_rv, log_rv)
+
+    def test_dm_qlike_raises_on_log_inputs(self):
+        rng = np.random.default_rng(1)
+        realized = pd.Series(np.log(rng.uniform(1e-5, 1e-3, 300)))
+        f1 = pd.Series(np.log(rng.uniform(1e-5, 1e-3, 300)))
+        f2 = pd.Series(np.log(rng.uniform(1e-5, 1e-3, 300)))
+        with pytest.raises(ValueError):
+            diebold_mariano_qlike(realized, f1, f2)
+
+    def test_variance_inputs_give_non_degenerate_loss(self):
+        rng = np.random.default_rng(2)
+        realized = rng.uniform(1e-5, 1e-3, 500)
+        forecast = rng.uniform(1e-5, 1e-3, 500)
+        loss = _qlike_loss(realized, forecast)
+        assert np.isfinite(loss).all()
+        # The old clipping bug made this fraction ~1.0.
+        assert (loss == 0.0).mean() < 0.01
+
+    def test_nan_passes_through(self):
+        realized = np.array([1e-4, np.nan, 2e-4])
+        forecast = np.array([1e-4, 3e-4, np.nan])
+        loss = _qlike_loss(realized, forecast)
+        assert np.isnan(loss[1]) and np.isnan(loss[2])
+        assert loss[0] == pytest.approx(0.0)
+
 
 class TestDieboldMariano:
     def test_identical_forecasts_high_pvalue(self):
