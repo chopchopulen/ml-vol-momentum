@@ -1,3 +1,24 @@
+> # ⚠️ RESULTS INVALIDATED BY AUDIT — READ [`docs/FINAL_NUMBERS.md`](docs/FINAL_NUMBERS.md) FIRST
+>
+> A blind audit (four independent read-only auditors plus an adversarial refutation pass)
+> invalidated several headline results in this README. **[`docs/FINAL_NUMBERS.md`](docs/FINAL_NUMBERS.md)
+> is the single source of truth** for what this project can and cannot claim.
+>
+> Retired here: the TCN's "highest IC 0.769" and "only positive Sharpe" (both artefacts of
+> being scored on 124,216 rows / 2003–2012 against comparators on 275,489 rows / 2003–2024),
+> every Diebold-Mariano p-value below, and Prediction 5's ❌ Falsified grade.
+>
+> Two facts that reframe everything in this document:
+> **(1)** On the aligned sample, **no model beats a zero-parameter 126-day rolling estimator**
+> — a per-ticker constant with no time-varying information scores IC 0.55.
+> **(2)** **No Sharpe ratio in this project is a return on capital** — gross exposure is never
+> normalised, so all Sharpe figures are relative brackets only.
+>
+> Corrected tables: [`results/aligned_comparison.md`](results/aligned_comparison.md).
+> Full defect list: [`audit/FINDINGS.md`](audit/FINDINGS.md).
+> No model was retrained and no hyperparameter, threshold, architecture or seed was changed
+> during the audit — every correction is a measurement fix.
+
 # ML Volatility Forecasting for Momentum Signal Scaling
 
 A from-scratch quantitative research project comparing ML-based volatility forecasters (GBM, LSTM) against econometric baselines (HAR-RV, GARCH) for momentum signal scaling on S&P 500 constituents (2003–2024).
@@ -27,7 +48,13 @@ The Diebold-Mariano test (QLIKE loss, Newey-West HAC) tells us which IC differen
 - **GBM vs HAR-RV**: p = 0.317 — *not distinguishable*. Panel gradient boosting with 10 features is equivalent to per-stock OLS with 3 features.
 - **HAR-RV vs GARCH**: p < 0.001 — HAR-RV's multi-horizon structure clearly beats GARCH's single-series fit.
 
-**Full DM p-value matrix** (two-sided, QLIKE loss):
+**Full DM p-value matrix** (two-sided, QLIKE loss) — **⚠️ RETIRED.** Every p-value in this
+matrix, and every DM claim above it, was computed from a QLIKE loss fed log-variances into a
+clip at `1e-12`, which drove the loss to exactly zero on **99.98%** of rows; correcting it to
+variance levels on identical rows inverts **all ten** pairwise verdicts. Corrected matrix:
+[`results/aligned_comparison.md`](results/aligned_comparison.md); detail in
+`docs/FINAL_NUMBERS.md` R4.
+
 
 |  | rolling_vol | har_rv | garch | gbm | lstm |
 |--|-------------|--------|-------|-----|------|
@@ -37,7 +64,17 @@ The Diebold-Mariano test (QLIKE loss, Newey-West HAC) tells us which IC differen
 | **gbm** | < 0.001 | 0.317 | 1.000 | — | < 0.001 |
 | **lstm** | 0.132 | < 0.001 | < 0.001 | < 0.001 | — |
 
-Note: GARCH vs GBM shows p = 1.000 — this is a degenerate result caused by GARCH's constant forecast (see below). The Model Confidence Set at α = 0.10 retains all five models; no forecaster is statistically distinguishable from the best.
+~~Note: GARCH vs GBM shows p = 1.000 — this is a degenerate result caused by GARCH's constant
+forecast (see below). The Model Confidence Set at α = 0.10 retains all five models; no
+forecaster is statistically distinguishable from the best.~~
+
+**Both sentences are retired.** The `p = 1.000` cell was *not* caused by GARCH's constant
+forecast — it was the clip: both log-forecast series are entirely negative, so every loss
+differential was identically zero. On variance levels the same pair gives p < 0.001. (GARCH
+*is* a constant broadcast — one forecast value per ticker-year against 224 for every other
+model — but that is a separate defect, `docs/FINAL_NUMBERS.md` OPEN-2.) The Model Confidence
+Set was **never computed**: `src/eval/tests.py::model_confidence_set` has no call site outside
+its unit test and no MCS artefact exists in `results/`.
 
 ### IC by Year
 
@@ -87,6 +124,28 @@ Vol scaling: at each monthly rebalance date, `weight_i = (10% / σ̂_i) × z_sco
 
 **The Parkinson surprise:** The pre-registered prediction was `rv_m > rv_w > vix > rv_d`. Instead, Parkinson (pk) dominates at 0.380, nearly 40% of total importance. Parkinson uses the daily high-low range rather than close-to-close returns. It captures intraday volatility information not present in end-of-day prices — a stock can close flat but swing ±3% intraday, which Parkinson detects and close-to-close RV misses. The GBM learned this structure from data; HAR-RV cannot exploit it because HAR uses only close-to-close returns. This is a genuine discovery: a model with access to OHLC data will naturally weight range-based estimators over close-to-close ones for cross-sectional volatility ranking.
 
+> **Audit annotation.** The underlying result survived the audit; the attribution *number* did
+> not.
+>
+> **What holds.** The audit specifically attacked the hypothesis that `pk` leaks the target —
+> a leaking feature is exactly what SHAP would rank first. It does not leak. `pk` at index *t*
+> consumes bars **t−5 … t−1**; the target consumes **t+1 … t+21**; there is a full **one-bar
+> dead zone**, verified numerically to **1e-16**. The economic explanation stands on its own:
+> measured standalone cross-sectional IC is `pk` **0.6454** on a *5-day* window against `rv_m`
+> **0.6552** on a *21-day* window, because a range estimator is roughly **5× more efficient per
+> bar** than squared close-to-close returns. Five days of range ≈ 21 days of close-to-close.
+>
+> **What does not hold.** (1) The 0.380 figure is the **GBM's**, not the TCN's — the 0.769
+> model has no SHAP analysis anywhere in this repo. (2) SHAP was computed **in-sample**:
+> `scripts/run_phase4.py:84-85` fits on `train_last` and attributes on `train_last`, the same
+> rows, so it describes what the model *fit*, not what generalises. (3) "38%" is a share of
+> total mean|SHAP| on a 5,000-row sample, not variance explained. (4) `vix` carries 0.082 SHAP
+> weight despite having **zero cross-sectional variation** — it is identical for every ticker
+> on a given date and cannot rank stocks at all.
+>
+> So: *include range-based estimators* is sound advice. *Parkinson accounts for 38% of
+> importance* is not a number to quote. See `docs/FINAL_NUMBERS.md` C4 and OPEN-6.
+
 ### VIX Regime IC Breakdown
 
 ![Regime heatmap](docs/figures/regime_ic_heatmap.png)
@@ -115,7 +174,7 @@ All models forecast better in high-stress environments — when the cross-sectio
 | 2 | GBM beats HAR-RV by +0.02 to +0.05 IC | GBM beat by +0.019 — just below the floor | ❌ Borderline miss |
 | 3 | LSTM won't beat GBM on IC | LSTM IC 0.739 was the *highest* of all models | ❌ Falsified |
 | 4 | HAR-RV/GBM/LSTM Sharpe spread < 0.15 | Spread = 0.061; DM indistinguishable | ✅ Confirmed |
-| 5 | All scaled variants beat unscaled | Only HAR-RV marginally beat unscaled | ❌ Falsified |
+| 5 | All scaled variants beat unscaled | **CORRECTED: all scaled variants beat unscaled (−0.134) on aligned dates** | **✅ Confirmed** |
 | 6 | SHAP ranking: rv_m > rv_w > vix > rv_d | pk (Parkinson) dominated at 0.380, not rv_m | ❌ Falsified |
 | 7 | Highest XS-IC model has highest Sharpe | LSTM: highest IC, lowest Sharpe | ❌ Falsified |
 | 8 | Sector-neutral reduces Sharpe by 0.1–0.2 uniformly | Changes ranged from -0.001 to -0.137; ranking disrupted | ❌ Falsified |
@@ -123,7 +182,15 @@ All models forecast better in high-stress environments — when the cross-sectio
 **What the failures tell us:**
 
 - **#3 (LSTM IC):** The sequence modelling in LSTM does add something — 22 years of cross-sectional data is enough to learn temporal patterns that benefit IC. But this doesn't translate to portfolio value.
-- **#5 (scaling doesn't help):** Vol scaling is supposed to reduce left-tail exposure. It does reduce max drawdown (unscaled: -91% vs HAR-RV scaled: -66%), but the 2003–2024 period has so little momentum alpha that there is nothing to protect. You cannot scale your way to a positive Sharpe if the underlying signal has none.
+- **#5 (scaling doesn't help): RETRACTED — the verdict was an artefact of a misaligned control
+  window.** The unscaled control was scored on **6,015 days from 2001-02-01** while every
+  scaled strategy was scored on **4,897 days from 2003-02-12**; the 1,118 extra days of
+  2001–2002 carried the entire difference. Aligned to the same dates, the control's Sharpe is
+  **−0.1343**, not −0.0021, and **all** scaled variants beat it (har_rv +0.020, gbm +0.002,
+  rolling_vol −0.015, lstm −0.041). Prediction 5 is **✅ Confirmed**. The original conclusion —
+  "you cannot scale your way to a positive Sharpe if the underlying signal has none" — has no
+  evidence behind it and is withdrawn. (Vol scaling still does not produce an *attractive*
+  Sharpe, and none of these figures is a return on capital; see the banner.)
 - **#6 (Parkinson):** The most practically useful finding. Any model trained on OHLC data should include range-based volatility estimators — they carry cross-sectional ranking information that close-to-close RV misses.
 - **#7 (IC ≠ Sharpe):** The deepest failure. IC measures rank correlation between forecasts and realised volatility. But the portfolio cares about the *level* of the forecast (because `weight = target_vol / sigma_hat` is level-sensitive), not just its rank. A model can rank stocks perfectly while being miscalibrated in level, producing weights that are direction-correct but size-wrong. At near-zero expected returns, this miscalibration dominates.
 
@@ -295,18 +362,47 @@ All architectures use identical setup: 9 features, seq_len=60, same walk-forward
 | LSTM | 0.739 | 0.091 | -0.041 | 73.7% | 22 |
 | Transformer | 0.746 | 0.090 | -0.026 | 73.6% | 22 |
 | MLP | 0.723 | 0.096 | -0.048 | 75.3% | 22 |
-| TCN | **0.769** | 0.074 | **+0.238** | 36.7% | 10* |
+| TCN | 0.769† | 0.074 | +0.238† | 36.7% | 10* |
 | Prob LSTM (plain) | 0.738 | 0.093 | -0.046 | 73.5% | 22 |
 | Prob LSTM (unc-weighted) | 0.738 | 0.093 | -0.036 | 73.1% | 22 |
 
-*TCN: 10/22 windows completed (2003–2012). Treat Sharpe with caution — partial sample may be favourable.
+*TCN: 10/22 windows completed (2003–2012).
+**† RETIRED — these two figures are not comparable to any other row in this table.** The TCN
+was scored on 124,216 rows / 2,236 dates / 2003–2012; every other row on 275,489 rows / 4,897
+dates / 2003–2024. The 2003–2012 subsample is easier for *every* model (rolling_vol +0.070,
+har_rv +0.068, transformer +0.046, lstm +0.034).
 
-**Key findings:**
+**Key findings — CORRECTED.** The aligned re-run
+([`results/aligned_comparison.md`](results/aligned_comparison.md)) scores every forecaster on
+identical rows and dates. Nothing was retrained.
 
-- **TCN shows the highest IC (0.769) and the only positive Sharpe (+0.238)** on its 10-window partial sample. Dilated causal convolutions with receptive field = 48 steps appear well-suited to this problem. The result needs full 22-window confirmation.
-- **Transformer slightly outperforms LSTM on IC (0.746 vs 0.739)** — attention captures longer-range dependencies better than a 1-layer LSTM. However it was ~4× slower on CPU, making it impractical without a GPU.
-- **MLP is the weakest (IC = 0.723)**, confirming that temporal structure helps vs a flat 540-dim feature vector. The 60-step ordering carries information.
-- **The IC ≠ Sharpe disconnect persists across all architectures.** MLP has lower IC than LSTM but nearly identical Sharpe. The forecast → strategy translation remains the binding constraint, not forecaster quality.
+- **On the aligned Panel A (123,749 rows, 2003–2012, all 10 forecasters), no model beats a
+  zero-parameter 126-day rolling estimator.** rolling_vol scores **0.7754**; the TCN scores
+  **0.7688**, i.e. **ΔIC = −0.0066 (t = −1.51, Newey-West at lag 2h)** — it does not beat the
+  baseline and the shortfall is not significant either. Order on that sample: rolling_vol
+  0.7754 > transformer 0.7714 > **TCN 0.7688** > prob_lstm 0.7579 > lstm 0.7572 > mlp 0.7484 >
+  EWMA 0.7391 > gbm 0.7274 > har_rv 0.7091 > garch 0.6716 > per-ticker constant 0.6118.
+  **The TCN is third, not first.**
+- **"The only positive Sharpe" is false.** On the aligned sample **every** strategy is positive
+  and the TCN ranks **8th of 11** (garch 0.312, mlp 0.301, EWMA 0.294, transformer 0.281,
+  har_rv 0.268, lstm 0.246, gbm 0.245, **TCN 0.236**, prob_lstm 0.218, rolling_vol 0.212,
+  constant 0.155). Its apparent uniqueness was entirely the window.
+- **No Sharpe in this project is a return on capital.** Gross exposure is never normalised
+  (`src/strategy/portfolio.py:64-67`): mean gross runs 1.15 to 10.0 across models and floats
+  0.68→4.66 *within* a single model. Treat every Sharpe above as a relative bracket, not a
+  performance figure.
+- **A zero-information floor of IC ≈ 0.55–0.61.** A per-ticker constant refreshed each fold,
+  containing no time-varying information whatsoever, scores 0.6118 on Panel A and 0.5505 on
+  the full period. Read every IC in this README against that floor, not against zero.
+- **On the full period one model does beat the baseline, narrowly.** Transformer
+  ΔIC = **+0.0085 (t = +2.80)** vs rolling_vol over 274,632 rows. Caveat: that margin is one
+  seed standard deviation (σ = 0.0075, measured over 12 seeds), and the Transformer ran at
+  2 seeds / 10 epochs against the LSTM's 5 seeds / 50 epochs — it cannot yet be attributed to
+  architecture.
+- **The IC ≠ Sharpe disconnect is smaller than it looked**, because the two numbers were being
+  read off different samples. See `docs/FINAL_NUMBERS.md` C5: a perfect-foresight oracle earns
+  +0.112 Sharpe against a zero-information constant's +0.028, so there *is* headroom in the
+  sizing rule — the models capture almost none of it.
 - **Practical note:** Transformer and TCN require GPU for production-scale walk-forward. On CPU, a single 22-window run takes 2–3 days. LSTM and MLP are tractable on CPU (~3h each).
 
 ---
