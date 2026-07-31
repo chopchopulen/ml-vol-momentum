@@ -95,9 +95,18 @@ for model_name, (model, mpanel) in models.items():
     all_strategies[f"{model_name}_scaled"] = net_scaled
     net_scaled.to_frame("net_return").to_parquet(f"results/strategies/{model_name}_scaled.parquet")
 
-# Unscaled baseline
+# Unscaled baseline.
+# The control MUST be scored on the same dates as the scaled strategies. Built
+# unrestricted it starts 2001-02-01 (6,015 days) while every scaled strategy
+# starts at the first OOS date 2003-02-12 (4,897 days); the extra 2001-2002 days
+# carried the entire difference and flipped a pre-registered verdict.
 w_unscaled = build_portfolios(signal, mode="long_short_quintile")
 net_unscaled = apply_costs(w_unscaled, returns_panel, cost_bps=10.0).dropna()
+_scaled_dates = None
+for _s in all_strategies.values():
+    _scaled_dates = _s.index if _scaled_dates is None else _scaled_dates.union(_s.index)
+if _scaled_dates is not None:
+    net_unscaled = net_unscaled.reindex(_scaled_dates).dropna()
 all_strategies["unscaled_momentum"] = net_unscaled
 net_unscaled.to_frame("net_return").to_parquet("results/strategies/unscaled_momentum.parquet")
 
@@ -108,17 +117,33 @@ print(results_tbl.to_string())
 results_tbl.to_parquet("results/master_results_table.parquet")
 print(results_tbl.to_csv())
 
-# Per-model IC summary
+# Per-model IC summary.
+# Own-sample IC is NOT comparable across models — row counts differ. Print the
+# common-row IC beside it and always print n_rows (CLAUDE.md rule 5).
 print("\n=== IC SUMMARY ===")
+_ic_idx = None
+for f in all_forecasts.values():
+    _ic_idx = f.index if _ic_idx is None else _ic_idx.intersection(f.index)
 for name, oos in all_forecasts.items():
     ic = cross_sectional_ic(oos, realized_rv.rename("target_rv").to_frame())
-    print(f"  {name}: mean_IC={ic.mean():.4f}  std_IC={ic.std():.4f}")
+    ic_c = cross_sectional_ic(oos.reindex(_ic_idx),
+                              realized_rv.rename("target_rv").to_frame())
+    print(f"  {name}: own_IC={ic.mean():.4f} (n={len(oos)})  "
+          f"common_IC={ic_c.mean():.4f} (n={len(_ic_idx)})")
 
-# DM matrix
-print("\n=== DM MATRIX (QLIKE, p-values) ===")
-log_rv_forecasts = {n: f["forecast_log_rv"] for n, f in all_forecasts.items()}
+# DM matrix.
+# QLIKE is defined on VARIANCES. Passing forecast_log_rv / target_log_rv here
+# fed negative numbers into a clip at 1e-12, collapsing both arguments to the
+# same constant and making the loss identically zero on >99% of rows.
+print("\n=== DM MATRIX (QLIKE on variance levels, p-values) ===")
+_dm_idx = None
+for f in all_forecasts.values():
+    _dm_idx = f.index if _dm_idx is None else _dm_idx.intersection(f.index)
+_dm_idx = _dm_idx.intersection(realized_rv.dropna().index)
+print(f"  common rows across all {len(all_forecasts)} models: {len(_dm_idx)}")
+rv_forecasts = {n: f["forecast_rv"].reindex(_dm_idx) for n, f in all_forecasts.items()}
 try:
-    dm_stats, dm_pvals = build_dm_matrix(log_rv_forecasts, realized_log)
+    dm_stats, dm_pvals = build_dm_matrix(rv_forecasts, realized_rv.reindex(_dm_idx))
     print(dm_pvals.round(3).to_string())
     dm_pvals.to_parquet("results/dm_pvalues.parquet")
 except Exception as e:

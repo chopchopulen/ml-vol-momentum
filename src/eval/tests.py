@@ -8,8 +8,26 @@ from src.eval.metrics import sharpe
 
 
 def _qlike_loss(realized: np.ndarray, forecast: np.ndarray) -> np.ndarray:
-    h = np.clip(forecast, 1e-12, None)
-    r = np.clip(realized,  1e-12, None)
+    """QLIKE loss. Both arguments must be VARIANCES, strictly positive.
+
+    Passing log-variances here is a silent catastrophe: they are negative
+    almost everywhere, the old `np.clip(..., 1e-12, None)` collapsed both
+    arguments to the same constant, and the loss became exactly
+    1 - log(1) - 1 = 0 on >99% of rows. Every resulting p-value tested
+    nothing. Reject non-positive input rather than clip it.
+    """
+    r = np.asarray(realized, dtype=float)
+    h = np.asarray(forecast, dtype=float)
+    for name, arr in (("realized", r), ("forecast", h)):
+        finite = arr[np.isfinite(arr)]
+        if finite.size and finite.min() <= 0:
+            n_bad = int((finite <= 0).sum())
+            raise ValueError(
+                f"_qlike_loss expects strictly positive variances, but {name} has "
+                f"{n_bad}/{finite.size} non-positive values (min={finite.min():.6g}). "
+                "If these are log-variances, pass exp() of them, or use the "
+                "forecast_rv / target_rv columns instead of forecast_log_rv / target_log_rv."
+            )
     return r / h - np.log(r / h) - 1
 
 
