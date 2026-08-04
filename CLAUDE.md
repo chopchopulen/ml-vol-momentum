@@ -10,22 +10,18 @@ This file is binding. It overrides convenience, habit, and anything a results fi
 
 ## 0. `docs/FINAL_NUMBERS.md` is the single source of truth
 
-**No number leaves this repo — into a README, a commit message, or a résumé — unless it appears
-in `docs/FINAL_NUMBERS.md` first.** Two numbers have already reached a résumé without existing
-anywhere in this repo (`Sharpe 0.576`, retired as R12: *"Cannot be sourced anywhere in this
-repository"*; and `median Sharpe 1.32`, which belongs to a different project and exists in
-neither). That failure mode is what this rule prevents.
+**No number leaves this repo unless it appears in `docs/FINAL_NUMBERS.md` first.** Results here
+live on two disjoint panels and are easy to misattribute; FINAL_NUMBERS is the reconciled record.
 
-**Always name the panel.** Results live on two disjoint samples and attaching one panel's
-descriptors to the other panel's finding is defect S0-1, the defect this project's audit exists
-to catch:
+**Always name the panel.** Attaching one panel's descriptors to the other panel's finding is
+defect S0-1:
 
 | | rows | dates | tickers | window | forecasters |
 |---|---|---|---|---|---|
 | **Panel A** | 123,749 | 2,236 | 56 | 2003-02-12 → 2012-12-31 | incl. TCN |
 | **Panel B** | 274,632 | 4,897 | 61 | 2003-02-12 → 2024-11-27 | TCN absent |
 
-Standing bans:
+Standing conventions:
 
 - **Never quote an IC level against a paired ΔIC.** `rolling_vol` 0.7754 vs Transformer
   **0.7714** (Δ = −0.0040) — not "0.7754 vs −0.0040."
