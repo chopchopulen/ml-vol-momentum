@@ -84,7 +84,28 @@ All models show elevated IC in volatile years (2008, 2020, 2022). LSTM and Rolli
 
 ### Strategy Performance (Vol-Scaled Momentum, net 10bps round-trip, 2003–2024)
 
-Vol scaling: at each monthly rebalance date, `weight_i = (10% / σ̂_i) × z_score(momentum_i)`. This targets 10% annualised portfolio volatility. Higher forecast accuracy should, in theory, produce better-calibrated weights and smoother returns.
+> ### ⚠️ NONE OF THE COLUMNS BELOW IS A RETURN ON CAPITAL
+>
+> **Gross exposure is never normalised** (`src/strategy/portfolio.py:64-67`): mean gross runs
+> 1.15 (rolling_vol) to 10.0 (garch, max 1810), and floats 0.68→4.66 *within* a single model.
+> There is also a √21 annualisation error at `src/strategy/scaling.py:35`. Consequently
+> **Sharpe, Sortino, Max DD, Ann. Return and Ann. Vol below are relative brackets only** — the
+> cross-model risk columns compare different leverages, and a percentage drawdown is
+> undefinable. See `docs/FINAL_NUMBERS.md` OPEN-3.
+>
+> **The rebalance cadence is also misdescribed in older drafts.** `configs/default.yaml`
+> specifies `rebalance: month_end`, but **the code does not implement it** — sizing is
+> recomputed *daily* against a 21-day horizon, producing **65× annualised turnover** on a
+> 12-month signal. Costs exceed gross alpha for every 22-window model (OPEN-8), so every
+> net-of-cost figure here is unreliable.
+
+Vol scaling: `weight_i = (10% / σ̂_i) × z_score(momentum_i)`, recomputed **daily** (not monthly —
+see above). This targets 10% annualised portfolio volatility. Higher forecast accuracy should,
+in theory, produce better-calibrated weights and smoother returns.
+
+**The forecast enters only as a per-name multiplier.** Sign and rank come entirely from the
+12-1 momentum z-score (`src/strategy/momentum.py:25`), so a number in this table is momentum's
+performance modulated by sizing — not the forecast's performance.
 
 | Strategy | Sharpe | Sortino | Max DD | Ann. Return | Ann. Vol |
 |----------|--------|---------|--------|-------------|---------|
@@ -98,6 +119,32 @@ Vol scaling: at each monthly rebalance date, `weight_i = (10% / σ̂_i) × z_sco
 *GARCH broadcasts a single scalar forecast to all stocks and dates. The vol-scaling formula `weight = target_vol / sigma_hat` produces extreme weights when `sigma_hat` is a small constant — the 385% annualised vol and -170% max drawdown are artefacts of degenerate weight construction, not a signal. Excluded from all comparisons.
 
 ![Equity curves](docs/figures/equity_curves.png)
+
+### The ceiling: what a perfect forecast is worth here
+
+Identical rows, 4,897 days, Panel B; **only the forecast fed to `vol_scale` varies**:
+
+| sizing input | Sharpe* |
+|---|---:|
+| **ORACLE — the realized forward RV itself (perfect foresight)** | **+0.1142** |
+| constant RV (zero information) | +0.0288 |
+| har_rv | +0.0200 |
+| gbm | +0.0019 |
+| rolling_vol | −0.0146 |
+| lstm | −0.0406 |
+| momentum control, aligned | −0.1343 |
+
+**Perfect foresight buys +0.085 over a zero-information constant, and +0.155 over the LSTM.**
+So there is ~0.09–0.16 of genuine headroom in this sizing design, and **every model exploits
+approximately none of it** — the LSTM is worse than a constant.
+
+This is the most important number in the project. It reframes the result: the IC-vs-Sharpe
+disconnect is *not* "the metric is meaningless." A forecast can rank stocks by volatility level
+(mostly static persistence — see S0-4) while adding nothing to the *conditional* information the
+sizing rule actually needs.
+
+*(Sharpe* carries the no-capital-base caveat above. Use as a relative bracket only. Source:
+`audit/FINDINGS.md` S2-2, `docs/FINAL_NUMBERS.md` C5.)*
 
 **Main finding:** Forecast quality does not translate to strategy performance in this sample. LSTM has the highest IC (0.739) but the worst non-degenerate Sharpe (-0.041). HAR-RV has the lowest IC among ML-comparable models (0.673) but the best Sharpe (0.020). The entire spread from best to worst non-degenerate Sharpe is 0.061 — statistically indistinguishable from noise.
 
